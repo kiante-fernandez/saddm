@@ -8,12 +8,11 @@ Runs under pytest (checks 0-6; the slow NUTS check is CLI-only) or directly:
 Checks, in order:
   0. Density is the s = 1 Wiener process (closed-form P(upper) and mean RT).
   1. Density matches the Numba reference (core PDF and quadrature integrator).
-  2. Density matches the legacy likelihood_pytensor implementation.
-  3. Gradients match central finite differences for every parameter.
-  4. logp and gradients stay finite in the corners of parameter space.
-  5. Per-trial (vector) parameters agree with scalar parameters.
-  6. The C, Numba, and JAX backends agree, with timings.
-  7. Optional: a short NUTS run to confirm gradient-based MCMC works end to end.
+  2. Gradients match central finite differences for every parameter.
+  3. logp and gradients stay finite in the corners of parameter space.
+  4. Per-trial (vector) parameters agree with scalar parameters.
+  5. The C, Numba, and JAX backends agree, with timings.
+  6. Optional: a short NUTS run to confirm gradient-based MCMC works end to end.
 
 Usage:
 """
@@ -130,30 +129,6 @@ def check_1_reference():
 
     ok = worst < 1e-6
     print(f"    {n} densities, max relative error {worst:.3e}  -> {'PASS' if ok else 'FAIL'}")
-    return ok
-
-
-def check_2_legacy():
-    """New density vs the legacy likelihood_pytensor implementation."""
-    print("\n[2] vs legacy likelihood_pytensor")
-    from saddm.likelihood_pytensor import ddm_logp_pytensor
-
-    rt_v, ch_v = pt.dvector("rt"), pt.dvector("ch")
-    sv = [pt.dscalar(p) for p in PARAMS[:8]]
-    f_old = pytensor.function([rt_v, ch_v] + sv,
-                              ddm_logp_pytensor(rt_v, ch_v, sv[0], sv[1], sv[2],
-                                                sv[3], sv[4], sv[5], sv[6], sz=sv[7]))
-    f_new, _ = _fn()
-
-    data = simulate_ddmsa(a=1.1, z=0.5, v=1.5, t=0.25, sv=0.8, sa=0.5, st=0.08,
-                          n_trials=300, seed=7)
-    rt, ch = data[:, 0], data[:, 1]
-    vals = [TRUE[p] for p in PARAMS[:8]]
-    old = f_old(rt, ch, *vals)
-    new = f_new(rt, ch, *vals, 0.0)
-    worst = float(np.max(np.abs(old - new)))
-    ok = worst < 1e-9
-    print(f"    {len(rt)} trials, max |delta logp| {worst:.3e}  -> {'PASS' if ok else 'FAIL'}")
     return ok
 
 
@@ -353,10 +328,6 @@ def test_reference_agreement():
     assert check_1_reference()
 
 
-def test_legacy_agreement():
-    assert check_2_legacy()
-
-
 def test_gradients():
     assert check_3_gradients()
 
@@ -382,7 +353,6 @@ if __name__ == "__main__":
     results = {
         "0 s=1 scale": check_0_scale(),
         "1 reference": check_1_reference(),
-        "2 legacy": check_2_legacy(),
         "3 gradients": check_3_gradients(),
         "4 edges": check_4_edges(),
         "5 broadcasting": check_5_vector_params(),

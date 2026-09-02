@@ -4,15 +4,10 @@ saddm - Drift Diffusion Model with across-trial variability in boundary separati
 Implements the DDM with variability parameters (sv, sz, st, sa).
 Diffusion coefficient s=1.
 
-Parameters:
-    a:  boundary separation (~0.65-2.4)
-    z:  relative starting point (0 to 1)
-    v:  drift rate (~0.1-0.5)
-    ter: non-decision time (seconds)
-    sv: Gaussian drift rate variability
-    sz: uniform starting point variability
-    st: uniform non-decision time variability
-    sa: uniform boundary separation variability
+Parameters (s = 1): a boundary separation, z relative start point in (0, 1),
+v drift rate, t non-decision time (seconds); sv Gaussian drift variability;
+sa, st, sz uniform full-width variability of boundary, non-decision time, and
+start point.
 """
 
 __version__ = "0.1.0"
