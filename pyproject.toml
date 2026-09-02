@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "saddm"
+version = "0.1.0"
+description = "Drift diffusion model with across-trial variability in boundary separation (DDM-SA): differentiable PyTensor likelihood for PyMC and HSSM"
+readme = "README.md"
+license = { text = "MIT" }
+authors = [
+    { name = "Kianté Fernandez" },
+    { name = "Blair R K Shevlin" },
+    { name = "Roger Ratcliff" },
+    { name = "Ian Krajbich" },
+]
+requires-python = ">=3.11"
+dependencies = [
+    "numpy",
+    "scipy",
+    "pytensor",
+]
+
+[project.optional-dependencies]
+sampling = ["pymc>=5.20", "arviz"]
+# jax is pinned: jax >= 0.10 silently freezes numpyro NUTS at its initial point.
+hssm = ["hssm>=0.3.0", "jax==0.5.3", "jaxlib==0.5.3", "numpyro==0.19.0", "matplotlib<3.11"]
+reference = ["numba"]
+test = ["pytest", "numba", "pymc>=5.20", "arviz"]
+
+[tool.setuptools]
+packages = ["saddm"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
