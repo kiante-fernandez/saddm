@@ -36,6 +36,7 @@ likelihood — see `examples/estimate_HSSM_saddm.py` for the minimal adapter
 | `verification/` | The heavy validation studies and their analysis. `parameter_recovery.py`: 100-config NUTS recovery (LHS grid at s = 1, exact sampler; `OUT_DIR`/`SHARD`/`N_SHARDS` env vars for cluster sharding). `recovery_figure.py`: the posterior-vs-truth panel. `compare_to_fortran.py`: per-subject and k-sweep comparison against the Fortran benchmark (reads `results/reference/` by default; point `RESULTS` at a fresh run). |
 | `data/itc_amasino/` | Amasino_2019 intertemporal-choice trials, the Fortran per-subject benchmark values, and the exact k-sweep permutation files the Fortran campaign used. |
 | `results/reference/` | Reference outputs of the validation campaign: recovery study CSVs + figure, ITC per-subject/k-sweep results + figures, hierarchical fit summaries + trace plots. Fresh runs write to `results/{recovery,itc_amasino,hier}/` (gitignored) so reproduction never collides with the reference copies. |
+| `fortran/` | The Fortran reference programs that produced the benchmark artifacts, with build notes (`fortran/README.md` maps each program to its artifact). |
 | `examples/` | HSSM applications (data under `data/itc_amasino/`; cavanagh_theta ships with HSSM): `estimate_HSSM_saddm.py` (flat fit, cavanagh_theta), `HSSM_estimate_ITC_Amasino.py` (per-subject + k-sweep replication of the Fortran ITC analysis), `HSSM_hierarchical.py` (hierarchical variants; bounded links required on `a`/`t` random effects). |
 
 
