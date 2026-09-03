@@ -22,7 +22,7 @@ class DDMIntegrator:
         # Parameter validation - check for invalid parameters
         if (sz > 0 and sz > 2 * min(z, 1 - z)) or \
            (st > 0 and st > 2 * ter) or \
-           (sa > 0 and sa > a):
+           (sa > 0 and sa > 2 * a):
             return 0.0
             
         # Check response time validity

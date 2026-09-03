@@ -13,6 +13,9 @@ Checks, in order:
   4. Per-trial (vector) parameters agree with scalar parameters.
   5. The C, Numba, and JAX backends agree, with timings.
   6. Optional: a short NUTS run to confirm gradient-based MCMC works end to end.
+  +. sa boundary: a_i = a +- sa/2 stays positive up to and including sa = 2a;
+     density must integrate to 1 there and be explicitly rejected past it,
+     matching the Numba reference's identical bound.
 """
 
 import argparse
@@ -24,8 +27,8 @@ import numpy as np
 import pytensor
 import pytensor.tensor as pt
 
-from saddm.ddmsa import (DDMSA, _is_static_zero, ddmsa_logp, sample_ddmsa_exact,
-                         simulate_ddmsa)
+from saddm.ddmsa import (DDMSA, _LOG_TINY, _is_static_zero, ddmsa_logp,
+                         sample_ddmsa_exact, simulate_ddmsa)
 
 PARAMS = ["a", "z", "v", "t", "sv", "sa", "st", "sz"]
 TRUE = dict(a=1.1, z=0.5, v=1.5, t=0.25, sv=0.8, sa=0.5, st=0.08, sz=0.1)
@@ -111,6 +114,9 @@ def check_1_reference():
         (1.5, 0.5, 0.2, 0.3, 0.20, 0.15, 0.08, 0.1),
         (1.1, 0.5, 3.2, 0.22, 2.3, 1.0, 0.10, 0.0),
         (1.1, 0.5, 2.0, 0.22, 1.0, 0.5, 0.10, 0.2),
+        # a < sa < 2a: legal (a_i = a +- sa/2 stays positive) but used to be
+        # rejected outright by the Numba reference's old sa < a bound.
+        (1.1, 0.5, 1.5, 0.25, 0.8, 1.6, 0.08, 0.0),
     ]:
         for rt in [t + 0.1, t + 0.35, t + 0.9]:
             ref = model.pdf(rt, a, z, v, t, sv=sv, sa=sa, st=st, sz=sz,
@@ -169,7 +175,10 @@ def check_3_edges():
         "t just below min RT": dict(t=min_rt - 1e-4),
         "t above min RT": dict(t=min_rt + 0.05),
         "st straddles min RT": dict(t=min_rt - 0.02, st=0.4),
-        "sa nearly equals a": dict(sa=TRUE["a"] * 0.999),
+        "sa just below 2a": dict(sa=TRUE["a"] * 1.99),
+        "sa exactly at 2a": dict(sa=TRUE["a"] * 2.0),
+        "sa just above 2a (rejected)": dict(sa=TRUE["a"] * 2.01),
+        "sa far past 2a (rejected)": dict(sa=TRUE["a"] * 5.0),
         "tiny a": dict(a=0.31),
         "huge a": dict(a=4.9),
         "z at the edge": dict(z=0.01, sz=0.0),
@@ -185,6 +194,58 @@ def check_3_edges():
         ok &= good
         print(f"    {label:22s} logp={L:12.2f} grad finite={np.all(np.isfinite(G))} "
               f"{'' if good else '<-- BAD'}")
+    print(f"    -> {'PASS' if ok else 'FAIL'}")
+    return ok
+
+
+def check_sa_boundary():
+    """The sa <= 2a boundary: a_i = a +- sa/2 stays positive up to and
+    including sa = 2a (Gauss-Legendre nodes are strictly inside (-1, 1), so
+    the a-axis grid never touches zero there); density must integrate to 1
+    across that whole range and be explicitly rejected once sa exceeds it,
+    rather than silently returning a mis-normalized value. The Numba
+    reference must enforce the identical bound.
+    """
+    print("\n[+] sa boundary (a_i = a +/- sa/2 stays positive)")
+    from scipy.integrate import quad
+
+    from saddm.model import DDMModel
+
+    f_logp, f_grad = _fn()
+    a, z, v, t = 1.1, 0.5, 1.5, 0.25
+
+    def density(rt, resp, sa_val):
+        return float(np.exp(f_logp([rt], [float(resp)], a, z, v, t, 0.0,
+                                   sa_val, 0.0, 0.0)[0]))
+
+    ok = True
+    for ratio in [1.0, 1.5, 1.99, 2.0]:
+        sa_val = ratio * a
+        total = sum(quad(lambda rt: density(rt, resp, sa_val), t + 1e-6, t + 30,
+                         limit=200)[0]
+                    for resp in (0, 1))
+        good = abs(total - 1.0) < 1e-3
+        ok &= good
+        print(f"    sa/a={ratio:.2f}  mass={total:.6f}  {'' if good else '<-- BAD'}")
+
+    for ratio in [2.01, 3.0, 5.0]:
+        sa_val = ratio * a
+        lp = float(f_logp([t + 0.2], [0.0], a, z, v, t, 0.0, sa_val, 0.0, 0.0)[0])
+        grad = np.asarray(f_grad([t + 0.2], [0.0], a, z, v, t, 0.0, sa_val, 0.0, 0.0),
+                          dtype=float)
+        good = np.isclose(lp, float(_LOG_TINY)) and np.all(np.isfinite(grad))
+        ok &= good
+        print(f"    sa/a={ratio:.2f}  logp={lp:.1f} rejected, grad finite="
+              f"{np.all(np.isfinite(grad))}  {'' if good else '<-- BAD'}")
+
+    model = DDMModel(n_points=15)
+    ref_valid = model.pdf(0.5, a, z, v, t, sa=1.99 * a, validate=False)
+    ref_invalid = model.pdf(0.5, a, z, v, t, sa=2.01 * a, validate=False)
+    bound_ok = ref_valid > model.min_p and ref_invalid == model.min_p
+    ok &= bound_ok
+    print(f"    Numba reference enforces the identical sa<=2a bound: "
+          f"{'yes' if bound_ok else 'NO <-- BAD'}")
+
     print(f"    -> {'PASS' if ok else 'FAIL'}")
     return ok
 
@@ -368,6 +429,10 @@ def test_static_zero():
     assert check_static_zero()
 
 
+def test_sa_boundary():
+    assert check_sa_boundary()
+
+
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--sample", action="store_true", help="also run the NUTS check")
@@ -382,6 +447,7 @@ if __name__ == "__main__":
         "4 broadcasting": check_4_vector_params(),
         "5 backends": check_5_backends(),
         "static zero": check_static_zero(),
+        "sa boundary": check_sa_boundary(),
     }
     if args.sample:
         results["6 NUTS"] = check_6_nuts(backend=args.backend)
