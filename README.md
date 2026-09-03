@@ -1,8 +1,8 @@
-# saddm
+# Implementation of Diffusion decision model with across-trial variability in boundary separation
 
 Diffusion decision model with across-trial variability in boundary separation
-(`sa`), drift (`sv`), and non-decision time (`st`) — the DDM-SA — as a fully
-differentiable PyTensor likelihood for gradient-based Bayesian estimation.
+(`sa`), drift (`sv`), and non-decision time (`st`). This codebase presents the 
+DDM-SA as a fully differentiable PyTensor likelihood for gradient-based Bayesian estimation.
 
 The likelihood is analytic (Navarro–Fuss density; drift variability integrated
 in closed form, uniform variability by Gauss–Legendre quadrature), so NUTS gets
