@@ -84,4 +84,5 @@ likelihood; `examples/estimate_HSSM_saddm.py` is the minimal adapter.
 Blair R. K. Shevlin\* and Kianté Fernandez\* contributed equally.
 
 :Author: Kianté Fernandez, Blair R K Shevlin, Roger Ratcliff, Ian Krajbich
+
 :Contact: kiante@ucla.edu, blair.shevlin@mssm.edu, ratcliff.22@osu.edu, krajbich@ucla.edu
