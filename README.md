@@ -21,10 +21,6 @@ pip install -e ".[hssm]"        # + hssm, with pinned jax/numpyro
 pip install -e ".[test]"        # + pytest, numba (reference backend)
 ```
 
-The jax pin in the `hssm` extra is deliberate: jax ≥ 0.10 silently freezes
-numpyro NUTS at its initial point. `jax==0.5.3` / `numpyro==0.19.0` are the
-verified versions.
-
 ## Quickstart
 
 ```python
