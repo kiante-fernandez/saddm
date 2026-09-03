@@ -1,5 +1,10 @@
 # Implementation of Diffusion decision model with across-trial variability in boundary separation
 
+[![PyPI](https://img.shields.io/pypi/v/saddm.svg)](https://pypi.org/project/saddm/)
+[![Python](https://img.shields.io/pypi/pyversions/saddm.svg)](https://pypi.org/project/saddm/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![tests](https://github.com/kiante-fernandez/saddm/actions/workflows/tests.yml/badge.svg)](https://github.com/kiante-fernandez/saddm/actions/workflows/tests.yml)
+
 Diffusion decision model with across-trial variability in boundary separation
 (`sa`), drift (`sv`), and non-decision time (`st`). This codebase presents the 
 DDM-SA as a fully differentiable PyTensor likelihood for gradient-based Bayesian estimation.
@@ -13,12 +18,23 @@ clone.
 
 ## Install
 
+From PyPI:
+
 ```bash
-pip install -e .                # core: numpy, scipy, pytensor
-pip install -e ".[sampling]"    # + pymc, arviz, numpyro (pinned jax)
-pip install -e ".[hssm]"        # + hssm
-pip install -e ".[test]"        # + pytest, numba (reference backend)
+pip install saddm               # core: numpy, scipy, pytensor
+pip install "saddm[sampling]"   # + pymc, arviz, numpyro (pinned jax)
+pip install "saddm[hssm]"       # + hssm
 ```
+
+From a clone, for development or to run the verification and examples:
+
+```bash
+pip install -e ".[test]"        # + pytest, numba (reference backend)
+pip install -e ".[hssm]"        # everything the examples need
+```
+
+The `sampling` and `hssm` extras pin `jax==0.5.3` / `numpyro==0.19.0`
+deliberately: newer jax silently freezes numpyro's NUTS at its initial point.
 
 ## Quickstart
 
