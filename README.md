@@ -2,8 +2,7 @@
 
 Diffusion decision model with across-trial variability in boundary separation
 (`sa`), drift (`sv`), and non-decision time (`st`) — the DDM-SA — as a fully
-differentiable PyTensor likelihood for gradient-based Bayesian estimation with
-[PyMC](https://www.pymc.io) and [HSSM](https://github.com/lnccbrown/HSSM).
+differentiable PyTensor likelihood for gradient-based Bayesian estimation.
 
 The likelihood is analytic (Navarro–Fuss density; drift variability integrated
 in closed form, uniform variability by Gauss–Legendre quadrature), so NUTS gets
@@ -58,17 +57,6 @@ likelihood; `examples/estimate_HSSM_saddm.py` is the minimal adapter.
 | `fortran/` | The Fortran programs that produced the benchmarks, with build notes. |
 | `data/itc_amasino/` | Amasino et al. (2019) trials, the Fortran benchmarks, and the exact k-sweep permutation files. |
 | `results/reference/` | Reference outputs: recovery, ITC, and hierarchical results with figures. Fresh runs write to gitignored `results/` subdirectories. |
-
-## Validation summary
-
-- Density matches the s = 1 closed-form choice probability and mean decision
-  time to 1e-16, and the Fortran-derived Numba reference to 1.6e-8; gradients
-  match finite differences to ~1e-9; C, Numba, and JAX backends agree to 2e-13.
-- Parameter recovery (100 simulated datasets, 500 trials): a/z/v/t at
-  r = 0.93–0.98 with near-nominal coverage; sv/sa/st at r = 0.65–0.71.
-- Empirical: reproduces the Fortran per-subject benchmark (r = 0.95 on the
-  value coefficient, 212 subjects) and the population k-sweep on identical
-  trial samples; hierarchical DDM-SA converges on the full dataset.
 
 ## Citation
 
