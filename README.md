@@ -47,9 +47,7 @@ idata = sample_ddmsa(make_ddmsa_model(data), backend="numpyro")
 ```
 
 `saddm.ddmsa_logp(rt, response, a, z, v, t, sv, sa, st, sz)` is the per-trial
-log-likelihood; every parameter may be a scalar or a per-trial vector. It has
-no lapse mixture: HSSM applies its own `p_outlier` on top of any analytical
-likelihood, and in plain PyMC one is a `pm.logaddexp` away.
+log-likelihood; every parameter may be a scalar or a per-trial vector.
 
 With HSSM, register `saddm.ddmsa_logp` as a `loglik_kind="analytical"`
 likelihood; `examples/estimate_HSSM_saddm.py` is the minimal adapter.
