@@ -14,8 +14,8 @@
 !   x(1) = a       boundary separation
 !   x(2) = t0      non-decision time (seconds)
 !   x(3) = sv      drift-intercept variability (across participants, normal SD)
-!   x(4) = sa      boundary-separation variability (across participants, uniform half-range)
-!   x(5) = st      non-decision-time variability (across participants, uniform half-range)
+!   x(4) = sa      boundary-separation variability (across participants, uniform full width)
+!   x(5) = st      non-decision-time variability (across participants, uniform full width)
 !   x(6) = v0      drift intercept (population mean)
 !   x(7) = v_val   value coefficient (USD)
 !   x(8) = v_time  delay coefficient (days)

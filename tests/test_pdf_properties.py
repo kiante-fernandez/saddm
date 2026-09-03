@@ -155,7 +155,7 @@ class TestChoiceCoding:
         assert abs(p_lower - p_upper) < 1e-10
 
     def test_drift_favors_one_boundary(self, model):
-        """Positive drift should favor lower boundary."""
+        """Positive drift makes the upper response (choice 1) more likely."""
         a, z, v, ter = 1.2, 0.5, 0.3, 0.3
 
         data_lower = [(0.5, 0)]
@@ -166,4 +166,5 @@ class TestChoiceCoding:
         ll_lower = model.log_likelihood(params, data_lower)
         ll_upper = model.log_likelihood(params, data_upper)
 
-        assert np.isfinite(ll_lower) and np.isfinite(ll_upper)
+        assert ll_upper > ll_lower
+        assert model.log_likelihood([a, z, -v, ter, 0.0, 0.0, 0.0, 0.0], data_lower) == ll_upper

@@ -9,9 +9,12 @@ Two stages, matching the fit_ddm_itc_sa.f90 / ksweep_v2 design:
 
 Units are the Fortran ones throughout: a is the FULL boundary separation and
 sa/st are FULL widths of the uniform across-trial/participant distributions,
-so estimates compare to data/itc_amasino/benchmark_targets_amasino.csv directly. t is sampled as the
-lower edge of the non-decision distribution (actual t0 = t + st/2).
+so estimates compare to data/itc_amasino/benchmark_targets_amasino.csv
+directly. t is sampled as the lower edge of the non-decision distribution
+(actual t0 = t + st/2).
 
+Environment: STAGE (all | persubject | ksweep), PLAIN=1 for the plain DDM,
+SHARD / N_SHARDS to split the per-subject stage across workers, OUT_DIR.
 Both stages checkpoint to CSV and skip completed rows on restart.
 """
 
@@ -53,6 +56,7 @@ PLAIN = os.environ.get("PLAIN", "0") == "1"
 KS = [1, 2, 4, 10, 50]
 N_PERMS = 5
 DRAWS, TUNE, CHAINS = 1000, 1000, 2
+SUFFIX = "_plain" if PLAIN else ""
 if PLAIN:
     PARAMS = ["v", "a", "z", "t"]
     REPORT = ["v_Intercept", "v_val", "v_tim", "a", "z", "t"]
@@ -126,9 +130,15 @@ def done_tags(path):
     return set(pd.read_csv(path).tag)
 
 
+def report(tag, row):
+    print(f"{tag} n={row['n_trials']} {row['sec']}s div={row['div']} "
+          f"rhat={row['max_rhat']} | "
+          + " ".join(f"{p}={row[p]:.4f}" for p in REPORT + ["t0"]), flush=True)
+
+
 def run_per_subject():
-    suffix = ("_plain" if PLAIN else "") + (f"_shard{SHARD}" if SHARD >= 0 else "")
-    path = os.path.join(OUT_DIR, f"persubject{suffix}.csv")
+    shard = f"_shard{SHARD}" if SHARD >= 0 else ""
+    path = os.path.join(OUT_DIR, f"persubject{SUFFIX}{shard}.csv")
     done = done_tags(path)
     d = pd.read_csv(SRC_CSV)
     d = d[d.paper == "Amasino_2019"]
@@ -147,16 +157,13 @@ def run_per_subject():
         try:
             row = fit_one(df, tag)
             append_row(row, path)
-            extra = "" if PLAIN else f" sv={row['sv']:.3f} sa={row['sa']:.3f}"
-            print(f"{tag} n={row['n_trials']} {row['sec']}s div={row['div']} "
-                  f"rhat={row['max_rhat']} | v_val={row['v_val']:.4f} "
-                  f"a={row['a']:.3f} t0={row['t0']:.3f}{extra}", flush=True)
+            report(tag, row)
         except Exception as e:
             print(f"{tag} FAILED {type(e).__name__}: {str(e)[:150]}", flush=True)
 
 
 def run_ksweep():
-    path = os.path.join(OUT_DIR, "ksweep.csv")
+    path = os.path.join(OUT_DIR, f"ksweep{SUFFIX}.csv")
     done = done_tags(path)
     for k in KS:
         for perm in range(1, N_PERMS + 1):
@@ -176,10 +183,7 @@ def run_ksweep():
                 row = fit_one(df, tag)
                 row["k"], row["perm"] = k, perm
                 append_row(row, path)
-                print(f"{tag} n={row['n_trials']} {row['sec']}s "
-                      f"div={row['div']} rhat={row['max_rhat']} | "
-                      f"v_val={row['v_val']:.4f} sv={row['sv']:.3f} "
-                      f"a={row['a']:.3f} t0={row['t0']:.3f}", flush=True)
+                report(tag, row)
             except Exception as e:
                 print(f"{tag} FAILED {type(e).__name__}: {str(e)[:150]}",
                       flush=True)
@@ -187,26 +191,17 @@ def run_ksweep():
 
 def summarize():
     import glob
-    parts = sorted(glob.glob(os.path.join(OUT_DIR, "persubject*.csv")))
-    ps_path = os.path.join(OUT_DIR, "persubject.csv")
-    if parts and not os.path.exists(ps_path):
-        ps_path = parts[0] if len(parts) == 1 else ps_path
-    if len(parts) > 1:
-        pd.concat([pd.read_csv(f) for f in parts]).to_csv(
-            os.path.join(OUT_DIR, "persubject_merged.csv"), index=False)
-        ps_path = os.path.join(OUT_DIR, "persubject_merged.csv")
-    ks_path = os.path.join(OUT_DIR, "ksweep.csv")
-    if os.path.exists(ps_path):
-        ps = pd.read_csv(ps_path)
-        print(f"\n=== per-subject benchmark (n={len(ps)} subjects) ===")
-        print(ps[["v_Intercept", "v_val", "v_tim", "a", "t0", "z",
-                  "sv", "sa", "st"]].mean().round(4).to_string())
+    parts = sorted(glob.glob(os.path.join(OUT_DIR, f"persubject{SUFFIX}.csv"))
+                   + glob.glob(os.path.join(OUT_DIR, f"persubject{SUFFIX}_shard*.csv")))
+    if parts:
+        ps = pd.concat([pd.read_csv(f) for f in parts])
+        print(f"\n=== per-subject (n={len(ps)} subjects) ===")
+        print(ps[REPORT + ["t0"]].mean().round(4).to_string())
+    ks_path = os.path.join(OUT_DIR, f"ksweep{SUFFIX}.csv")
     if os.path.exists(ks_path):
         ks = pd.read_csv(ks_path)
         print("\n=== k-sweep (mean over perms) ===")
-        print(ks.groupby("k")[["v_val", "v_tim", "a", "t0", "z",
-                               "sv", "sa", "st", "div"]]
-              .mean().round(4).to_string())
+        print(ks.groupby("k")[REPORT + ["t0", "div"]].mean().round(4).to_string())
 
 
 if __name__ == "__main__":

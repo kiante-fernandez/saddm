@@ -151,5 +151,23 @@ def test_model_invalid_params(model):
     ]
 
     for params in invalid_params_list:
-        ll = model.log_likelihood(params, data)
-        assert ll == -np.inf or np.isfinite(ll)
+        assert model.log_likelihood(params, data) == -np.inf
+
+
+def test_model_full_width_conventions(model):
+    """sz and sa are full widths: z +- sz/2 inside (0, 1) and a +- sa/2 > 0 are legal."""
+    rt, a, z, v, ter = 0.5, 1.4, 0.5, 0.3, 0.3
+
+    assert model.pdf(rt, a, z, v, ter, sz=0.6) > model.min_p
+    assert model.pdf(rt, a, z, v, ter, sa=0.9) > model.min_p
+    assert model.pdf(rt, a, z, v, ter, sz=1.2) == model.min_p
+    assert model.pdf(rt, a, z, v, ter, sa=1.5) == model.min_p
+
+
+def test_model_log_likelihood_slow_task(model):
+    """ter above 1 s must be accepted whenever every RT exceeds it."""
+    data = [(1.6, 0), (1.8, 1), (2.1, 0)]
+    ll = model.log_likelihood([1.2, 0.5, 0.3, 1.1, 0.0, 0.0, 0.0, 0.0], data)
+    assert np.isfinite(ll)
+    assert model.log_likelihood([1.2, 0.5, 0.3, 2.5, 0.0, 0.0, 0.0, 0.0], data) == \
+        3 * np.log(model.min_p)

@@ -15,6 +15,8 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 from saddm.ddmsa import ddmsa_logp
 
+OUT_DIR = os.environ.get("OUT_DIR", os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "..", "results", "cavanagh"))
 PARAMS = ["v", "a", "z", "t", "sv", "sa", "st"]
 
 
@@ -69,5 +71,6 @@ print("divergences:", int(idata.sample_stats.diverging.values.sum()))
 
 az.plot_trace(idata, var_names=list(PARAMS))
 plt.tight_layout()
-plt.savefig("ddmsa_cavanagh_traces.png", dpi=150)
-print("saved ddmsa_cavanagh_traces.png")
+os.makedirs(OUT_DIR, exist_ok=True)
+plt.savefig(os.path.join(OUT_DIR, "figure_cavanagh_flat_traces.png"), dpi=150)
+print("saved", os.path.join(OUT_DIR, "figure_cavanagh_flat_traces.png"))

@@ -1,7 +1,8 @@
 """Seven-panel posterior-vs-truth figure for the parameter recovery study.
 
-Reads shard CSVs from results/reference/recovery by default; point RESULTS at
-a fresh parameter_recovery.py output directory to plot a reproduction.
+Reads results/reference/recovery by default; point RESULTS at a fresh
+parameter_recovery.py output directory (sharded CSVs are concatenated) to plot
+a reproduction. Writes to OUT (default results/figures, gitignored).
 """
 
 import glob
@@ -16,7 +17,7 @@ import pandas as pd
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 RESULTS = os.environ.get("RESULTS", os.path.join(ROOT, "results/reference/recovery"))
-OUT = os.environ.get("OUT", RESULTS)
+OUT = os.environ.get("OUT", os.path.join(ROOT, "results/figures"))
 BLUE, ORANGE, MUTED, INK = "#2a78d6", "#eb6834", "#8a8983", "#1a1a19"
 PARAMS = ["a", "z", "v", "t", "sv", "sa", "st"]
 LABELS = dict(a="a (boundary)", z="z (start point)", v="v (drift)",
@@ -25,6 +26,8 @@ LABELS = dict(a="a (boundary)", z="z (start point)", v="v (drift)",
 
 files = sorted(glob.glob(os.path.join(RESULTS, "ddm_sa_recovery_nuts*.csv")))
 d = pd.concat([pd.read_csv(f) for f in files]).sort_values("config_id")
+if not d.config_id.is_unique:
+    raise ValueError(f"duplicate config_id across {files}")
 d["max_rhat"] = d[[f"rhat_{p}" for p in PARAMS]].max(axis=1)
 ok = d.max_rhat <= 1.05
 print(f"{len(d)} configs, {int((~ok).sum())} non-converged, "

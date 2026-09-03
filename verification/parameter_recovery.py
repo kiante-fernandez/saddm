@@ -7,7 +7,6 @@ and evaluates recovery quality.
 
 Usage:
     python parameter_recovery.py                # Full recovery study
-    python parameter_recovery.py --figure-only  # Regenerate figures from existing CSV
     python parameter_recovery.py --smoke-test   # Quick test with 1 config
 """
 
@@ -42,7 +41,7 @@ TARGET_ACCEPT = 0.90
 NUTS_BACKEND = "numpyro"   # ~4x the ESS/s of the default C backend
 
 # Parameter ranges, all in the s = 1 convention used by saddm.ddmsa.
-# The Fortran source (src/Fortran/fit_sa_simplex.f90:857-867) works at Ratcliff's
+# The Fortran source (fortran/fit_sa_simplex.f90:857-867) works at Ratcliff's
 # s = 0.1, so a, v, sv (eta) and sa are multiplied by 10 to land here; ter, st and
 # relative z are scale-free. Fortran a=0.11, v=0.01..0.32, eta=0.23, sa=0.10 map to
 # a=1.1, v=0.1..3.2, sv=2.3, sa=1.0.

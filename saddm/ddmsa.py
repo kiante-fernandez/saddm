@@ -12,12 +12,16 @@ Per trial, with diffusion coefficient s = 1:
     z_i ~ Uniform(z - sz/2, z + sz/2)     relative start point
     v_i ~ Normal(v, sv)                   drift rate
 
-sa, st and sz are full widths, matching saddm.simulate. The drift integral is
+sa, st and sz are full widths, matching simulate_ddmsa. The drift integral is
 analytic (Ratcliff's Gaussian-mixture form); the uniform integrals use
 Gauss-Legendre quadrature, exact to ~1e-8 at the default 7 nodes.
 
-The Fortran code in src/Fortran uses Ratcliff's s = 0.1 convention. Converting to
-this module means multiplying a, v, sv (eta) and sa by 10 and leaving t, st and
+There is no lapse (contaminant) mixture here: HSSM adds its own p_outlier
+mixture on top of any analytical likelihood, and in plain PyMC a lapse model is
+one pm.logaddexp away from ddmsa_logp.
+
+Ratcliff's s = 0.1 convention (used by fortran/fit_sa_simplex.f90) converts to
+this module by multiplying a, v, sv (eta) and sa by 10 and leaving t, st and
 relative z alone: Fortran a=0.11, v=0.01..0.32, eta=0.23, sa=0.10 becomes
 a=1.1, v=0.1..3.2, sv=2.3, sa=1.0.
 
@@ -41,7 +45,6 @@ __all__ = [
     "sample_ddmsa",
     "sample_ddmsa_exact",
     "simulate_ddmsa",
-    "N_QUAD",
 ]
 
 K_LARGE = 30
@@ -84,11 +87,16 @@ def wfpt_01w(tt, w):
 
 
 def _is_static_zero(x) -> bool:
-    """True when x is known to be exactly 0 while the graph is being built."""
-    if isinstance(x, (int, float, np.number)):
-        return float(x) == 0.0
-    if isinstance(x, np.ndarray):
-        return x.size > 0 and np.all(x == 0.0)
+    """True when x is known to be exactly 0 while the graph is being built.
+
+    pm.CustomDist hands constant parameters to logp as TensorConstants, so those
+    count too; otherwise every zero-width axis would still cost n_quad nodes.
+    """
+    if isinstance(x, pt.TensorConstant):
+        x = x.data
+    if isinstance(x, (int, float, np.number, np.ndarray)):
+        x = np.asarray(x)
+        return x.size > 0 and bool(np.all(x == 0.0))
     return False
 
 
@@ -110,8 +118,7 @@ def _uniform_axis(center, width, n_quad):
 
 
 def ddmsa_logp(rt, response, a, z, v, t,
-               sv=0.0, sa=0.0, st=0.0, sz=0.0,
-               p_outlier=0.0, lapse_density=0.1, n_quad=N_QUAD):
+               sv=0.0, sa=0.0, st=0.0, sz=0.0, n_quad=N_QUAD):
     """Per-trial log-likelihood of the DDM-SA. Pure PyTensor, fully differentiable.
 
     Every parameter may be a scalar or an (N,) vector, so the same function serves
@@ -119,19 +126,18 @@ def ddmsa_logp(rt, response, a, z, v, t,
 
     Args:
         rt:        (N,) response times in seconds, always positive.
-        response:  (N,) 0 = lower boundary, 1 = upper boundary.
+        response:  (N,) responses; > 0.5 is the upper boundary, so both 0/1 and
+            -1/1 coding work.
         a, z, v, t: boundary separation, relative start point in (0, 1), drift rate,
             non-decision time.
         sv: SD of the Gaussian across-trial drift distribution.
         sa, st, sz: full widths of the uniform across-trial distributions of boundary
             separation, non-decision time and relative start point.
-        p_outlier: probability that a trial is a lapse drawn from a flat density.
-        lapse_density: that flat density; 0.1 is HDDM's uniform over 0-5 s and two
-            responses.
         n_quad: Gauss-Legendre nodes per active variability dimension.
 
     Returns:
-        (N,) tensor of log-densities.
+        (N,) tensor of log-densities; -1e3 where rt is below every possible
+        non-decision time.
     """
     rt = pt.as_tensor_variable(rt).astype("float64")
     response = pt.as_tensor_variable(response).astype("float64")
@@ -181,13 +187,7 @@ def ddmsa_logp(rt, response, a, z, v, t,
              + pt.as_tensor_variable(log_wt)[None, None, :, None]
              + pt.as_tensor_variable(log_wz)[None, None, None, :])
 
-    logp = pt.logsumexp((log_pdf + log_w).reshape((rt.shape[0], -1)), axis=-1)
-
-    if not _is_static_zero(p_outlier):
-        p_out = pt.as_tensor_variable(p_outlier).astype("float64")
-        log_lapse = pt.log(pt.maximum(p_out, 1e-300)) + np.log(np.float64(lapse_density))
-        logp = pt.logaddexp(pt.log1p(-p_out) + logp, log_lapse)
-    return logp
+    return pt.logsumexp((log_pdf + log_w).reshape((rt.shape[0], -1)), axis=-1)
 
 
 def ddmsa_potential(data, **kwargs):
@@ -266,10 +266,9 @@ def _icdf_density_fn():
     return _ICDF_FN
 
 
-def sample_ddmsa_exact(a, z, v, t, sv=0.0, sa=0.0, st=0.0, sz=0.0,
-                       p_outlier=0.0, lapse_max_rt=5.0, n_trials=500,
+def sample_ddmsa_exact(a, z, v, t, sv=0.0, sa=0.0, st=0.0, sz=0.0, n_trials=500,
                        rng=None, seed=None, n_grid=8000, max_dt=30.0):
-    """Draw exact samples by inverting the analytic CDF.
+    """Draw exact samples by inverting the analytic CDF. Scalar parameters only.
 
     Preferred over simulate_ddmsa for parameter recovery. Euler-Maruyama overshoots
     the boundary by O(sqrt(dt)), which inflates a and sv enough to masquerade as a
@@ -283,10 +282,10 @@ def sample_ddmsa_exact(a, z, v, t, sv=0.0, sa=0.0, st=0.0, sz=0.0,
     if rng is None:
         rng = np.random.default_rng(seed)
     f = _icdf_density_fn()
+    a, z, v, t, sv, sa, st, sz = (float(x) for x in (a, z, v, t, sv, sa, st, sz))
 
     lo = max(t - st / 2.0, 0.0)
-    dt_grid = np.geomspace(1e-5, max_dt, n_grid)
-    grid = lo + dt_grid
+    grid = lo + np.geomspace(1e-5, max_dt, n_grid)
 
     dens = np.stack([f(grid, np.full(n_grid, float(c)), a, z, v, t, sv, sa, st, sz)
                      for c in (0.0, 1.0)])
@@ -308,57 +307,59 @@ def sample_ddmsa_exact(a, z, v, t, sv=0.0, sa=0.0, st=0.0, sz=0.0,
         if idx.size:
             rt[idx] = np.interp(u[idx] * mass[c], cum[c], grid)
 
-    if p_outlier > 0:
-        lapse = rng.random(n_trials) < p_outlier
-        rt[lapse] = rng.uniform(0.0, lapse_max_rt, int(lapse.sum()))
-        resp[lapse] = rng.integers(0, 2, int(lapse.sum())).astype(float)
-
     return np.column_stack([rt, resp])
 
 
-def DDMSA(name, a, z, v, t, sv=0.0, sa=0.0, st=0.0, sz=0.0,
-          p_outlier=0.0, lapse_density=0.1, n_quad=N_QUAD, observed=None,
-          **kwargs):
+def DDMSA(name, a, z, v, t, sv=0.0, sa=0.0, st=0.0, sz=0.0, n_quad=N_QUAD,
+          observed=None, **kwargs):
     """DDM-SA as a pm.CustomDist over an (N, 2) matrix of [rt, response].
 
     Preferred over a bare pm.Potential because it records per-trial log-likelihoods,
-    so az.loo and az.compare work, and it supports posterior predictive sampling.
+    so az.loo and az.compare work, and it supports posterior predictive sampling
+    (through sample_ddmsa_exact, so scalar parameters only).
+
+    pm.CustomDist hands logp fresh symbolic inputs, so a width that is a constant
+    0 would still be integrated over n_quad nodes. Only the non-zero parameters
+    become CustomDist inputs; the zeros are baked into the graph.
     """
     import pymc as pm
 
-    def logp(value, a_, z_, v_, t_, sv_, sa_, st_, sz_, p_out_):
-        return ddmsa_logp(value[:, 0], value[:, 1], a_, z_, v_, t_,
-                          sv=sv_, sa=sa_, st=st_, sz=sz_,
-                          p_outlier=p_out_, lapse_density=lapse_density,
-                          n_quad=n_quad)
+    given = dict(a=a, z=z, v=v, t=t, sv=sv, sa=sa, st=st, sz=sz)
+    free = [k for k, x in given.items() if not _is_static_zero(x)]
 
-    def random(a_, z_, v_, t_, sv_, sa_, st_, sz_, p_out_, rng=None, size=None):
+    def params(args):
+        return {**given, **dict(zip(free, args))}
+
+    def logp(value, *args):
+        return ddmsa_logp(value[:, 0], value[:, 1], n_quad=n_quad, **params(args))
+
+    def scalar(x):
+        x = np.unique(np.asarray(x, dtype="float64"))
+        if x.size != 1:
+            raise ValueError("DDMSA.random needs scalar parameters")
+        return float(x[0])
+
+    def random(*args, rng=None, size=None):
         n = 1 if size is None else int(np.prod(size))
-        out = simulate_ddmsa(float(a_), float(z_), float(v_), float(t_),
-                             sv=float(sv_), sa=float(sa_), st=float(st_),
-                             sz=float(sz_), n_trials=n, rng=rng)
-        if out.shape[0] < n:
-            pad = out[rng.integers(0, max(out.shape[0], 1), n - out.shape[0])]
-            out = np.vstack([out, pad])
-        out = out[:n]
+        out = sample_ddmsa_exact(n_trials=n, rng=rng,
+                                 **{k: scalar(x) for k, x in params(args).items()})
         return out if size is None else out.reshape(tuple(size) + (2,))
 
     return pm.CustomDist(
-        name, a, z, v, t, sv, sa, st, sz, p_outlier,
+        name, *[given[k] for k in free],
         logp=logp, random=random,
-        signature="(),(),(),(),(),(),(),(),()->(2)",
+        signature=",".join("()" for _ in free) + "->(2)",
         observed=observed, **kwargs,
     )
 
 
-def make_ddmsa_model(data, sz=False, p_outlier=False, n_quad=N_QUAD,
-                     constrained=True, lapse_density=0.1, use_potential=False):
+def make_ddmsa_model(data, sz=False, n_quad=N_QUAD, constrained=True,
+                     use_potential=False):
     """Build a single-condition PyMC model for the DDM-SA.
 
     Args:
         data: (N, 2) array with columns [rt in seconds, response 0/1].
         sz: include across-trial start-point variability.
-        p_outlier: include a lapse-rate contamination mixture.
         n_quad: Gauss-Legendre nodes per variability dimension.
         constrained: sample sa as a fraction of a, so a - sa/2 stays positive by
             construction and the likelihood's clipping guard never binds. Set False
@@ -374,8 +375,7 @@ def make_ddmsa_model(data, sz=False, p_outlier=False, n_quad=N_QUAD,
     and sv and drives sa toward zero.
 
     Returns:
-        pm.Model with named variables a, z, v, t, sv, sa, st and optionally sz,
-        p_outlier.
+        pm.Model with named variables a, z, v, t, sv, sa, st and optionally sz.
     """
     import pymc as pm
 
@@ -404,10 +404,7 @@ def make_ddmsa_model(data, sz=False, p_outlier=False, n_quad=N_QUAD,
         else:
             sz_val = 0.0
 
-        p_out = pm.Beta("p_outlier", alpha=1.0, beta=30.0) if p_outlier else 0.0
-
-        kw = dict(sv=sv, sa=sa, st=st, sz=sz_val, p_outlier=p_out,
-                  lapse_density=lapse_density, n_quad=n_quad)
+        kw = dict(sv=sv, sa=sa, st=st, sz=sz_val, n_quad=n_quad)
         if use_potential:
             pm.Potential("ddmsa", ddmsa_potential(data, a=a, z=z, v=v, t=t, **kw))
         else:

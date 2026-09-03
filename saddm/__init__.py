@@ -1,20 +1,17 @@
 """
 saddm - Drift Diffusion Model with across-trial variability in boundary separation.
 
-Implements the DDM with variability parameters (sv, sz, st, sa).
-Diffusion coefficient s=1.
-
 Parameters (s = 1): a boundary separation, z relative start point in (0, 1),
 v drift rate, t non-decision time (seconds); sv Gaussian drift variability;
 sa, st, sz uniform full-width variability of boundary, non-decision time, and
 start point.
+
+The Numba reference implementation (saddm.core, saddm.integrator, saddm.model)
+needs the `reference` extra and is imported explicitly.
 """
 
 __version__ = "0.1.0"
 
-from .core import ddm_pdf_core, ftt_01w
-from .integrator import DDMIntegrator
-from .model import DDMModel
 from .ddmsa import (
     DDMSA,
     ddmsa_logp,
@@ -26,10 +23,6 @@ from .ddmsa import (
 )
 
 __all__ = [
-    "ddm_pdf_core",
-    "ftt_01w",
-    "DDMIntegrator",
-    "DDMModel",
     "ddmsa_logp",
     "ddmsa_potential",
     "DDMSA",

@@ -14,5 +14,15 @@ jobs:
         with:
           python-version: "3.11"
       - run: pip install -e ".[test]"
-      - run: pytest tests -q --deselect tests/test_ddmsa.py::test_backends
+      - run: pytest tests -q
+
+  install:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
       - run: pip install build && python -m build
+      - run: pip install dist/*.whl
+      - run: cd / && python -c "from saddm import ddmsa_logp, simulate_ddmsa; d = simulate_ddmsa(a=1.1, z=0.5, v=1.5, t=0.25, sv=0.8, sa=0.5, st=0.08, n_trials=200, seed=0); lp = ddmsa_logp(d[:, 0], d[:, 1], a=1.1, z=0.5, v=1.5, t=0.25, sv=0.8, sa=0.5, st=0.08).eval(); assert lp.shape == (200,) and abs(lp).max() < 1e3, lp; print('core install ok')"

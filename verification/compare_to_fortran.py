@@ -1,8 +1,9 @@
 """Compare HSSM ITC results (from examples/HSSM_estimate_ITC_Amasino.py) to the
-Fortran benchmark: per-subject scatter and k-sweep recovery curves.
+Fortran benchmark on every shared parameter: per-subject scatter and k-sweep
+curves.
 
-Reads results from results/reference/itc_amasino by default (the shipped
-reference outputs); point RESULTS at a fresh run to compare a reproduction.
+Reads results/reference/itc_amasino by default; point RESULTS at a fresh run
+to compare a reproduction. Writes to OUT (default results/figures, gitignored).
 """
 
 import os
@@ -16,10 +17,37 @@ import pandas as pd
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 RESULTS = os.environ.get("RESULTS", os.path.join(ROOT, "results/reference/itc_amasino"))
-OUT = os.environ.get("OUT", RESULTS)
-BENCH = pd.read_csv(os.path.join(ROOT, "data/itc_amasino/benchmark_targets_amasino.csv"))
-FORTRAN_KSWEEP = pd.read_csv(os.path.join(ROOT, "data/itc_amasino/fortran_ksweep_summary.csv"))
+OUT = os.environ.get("OUT", os.path.join(ROOT, "results/figures"))
 BLUE, ORANGE, MUTED, INK = "#2a78d6", "#eb6834", "#8a8983", "#1a1a19"
+
+# Fortran column -> HSSM column. Fortran reports the start point mirrored
+# (z_fortran = 1 - z), which fortran_frame undoes.
+COLS = {"v0": "v_Intercept", "v_val": "v_val", "v_time": "v_tim",
+        "a": "a", "t0": "t0", "z": "z", "sv": "sv"}
+LABELS = {"v0": "v0 (drift intercept)", "v_val": "v_val (USD$^{-1}$)",
+          "v_time": "v_time (day$^{-1}$)", "a": "a (boundary)", "t0": "t0 (s)",
+          "z": "z (start point)", "sv": "sv (drift variability)"}
+
+
+def fortran_frame(df):
+    df = df.copy()
+    df["z"] = 1.0 - df["z"]
+    return df
+
+
+def hssm_frame(df):
+    return df.rename(columns={h: f for f, h in COLS.items()})
+
+
+BENCH = fortran_frame(pd.read_csv(os.path.join(ROOT, "data/itc_amasino/benchmark_targets_amasino.csv")))
+FORTRAN_KSWEEP = fortran_frame(pd.read_csv(os.path.join(ROOT, "data/itc_amasino/fortran_ksweep_summary.csv")))
+
+
+def style(ax):
+    for sp in ("top", "right"):
+        ax.spines[sp].set_visible(False)
+    ax.grid(color="#e8e7e2", lw=0.8)
+    ax.set_axisbelow(True)
 
 
 def per_subject():
@@ -27,24 +55,23 @@ def per_subject():
     if not os.path.exists(path):
         print("no persubject_plain.csv; skipping per-subject comparison")
         return
-    ps = pd.read_csv(path)
+    ps = hssm_frame(pd.read_csv(path))
     ps["subj_ident"] = ps.tag.str.replace("subj_", "")
     m = ps.merge(BENCH, on="subj_ident", suffixes=("_h", "_f"))
     conv = m[m.max_rhat <= 1.05]
+    params = [p for p in COLS if p in BENCH.columns]
     print(f"per-subject: {len(conv)}/{len(m)} converged")
-    fig, axes = plt.subplots(1, 3, figsize=(13, 4.2))
-    for ax, (f, h, lab) in zip(axes, [("v_val_f", "v_val_h", "v_val"),
-                                      ("a_f", "a_h", "a"), ("t0_f", "t0_h", "t0")]):
-        lo = min(conv[f].min(), conv[h].min()); hi = max(conv[f].max(), conv[h].max())
+    fig, axes = plt.subplots(2, 3, figsize=(13, 8.2))
+    for ax, p in zip(axes.flat, params):
+        f, h = conv[p + "_f"], conv[p + "_h"]
+        lo, hi = min(f.min(), h.min()), max(f.max(), h.max())
         ax.plot([lo, hi], [lo, hi], color=MUTED, lw=1, ls="--", zorder=1)
-        ax.scatter(conv[f], conv[h], s=18, color=BLUE, alpha=0.7,
-                   edgecolor="white", lw=0.5, zorder=3)
-        r = np.corrcoef(conv[f], conv[h])[0, 1]
-        print(f"  {lab:6s} fortran={conv[f].mean():8.4f} hssm={conv[h].mean():8.4f} r={r:.3f}")
+        ax.scatter(f, h, s=18, color=BLUE, alpha=0.7, edgecolor="white", lw=0.5, zorder=3)
+        r = np.corrcoef(f, h)[0, 1]
+        print(f"  {p:6s} fortran={f.mean():8.4f} hssm={h.mean():8.4f} r={r:.3f}")
         ax.text(0.04, 0.94, f"r = {r:.3f}", transform=ax.transAxes, va="top", color=INK)
-        ax.set_xlabel(f"{lab}  Fortran (ML)"); ax.set_ylabel(f"{lab}  HSSM (NUTS)")
-        for sp in ("top", "right"): ax.spines[sp].set_visible(False)
-        ax.grid(color="#e8e7e2", lw=0.8); ax.set_axisbelow(True)
+        ax.set_xlabel(f"{LABELS[p]}  Fortran (ML)"); ax.set_ylabel("HSSM (NUTS)")
+        style(ax)
     fig.suptitle(f"Per-subject plain DDM + drift regression: HSSM vs Fortran "
                  f"(Amasino 2019, n = {len(conv)} converged)", fontsize=11, color=INK)
     plt.tight_layout()
@@ -58,35 +85,35 @@ def ksweep():
     if not os.path.exists(path):
         print("no ksweep.csv; skipping k-sweep comparison")
         return
-    ks = pd.read_csv(path)
-    g = ks.groupby("k").agg(**{p: (p, "mean") for p in ["v_val", "a", "t0"]},
-                            v_val_sd=("v_val", "std"), a_sd=("a", "std"), t0_sd=("t0", "std"))
-    fig, axes = plt.subplots(1, 3, figsize=(13, 4.2))
-    for ax, (p, ylabel) in zip(axes, [("v_val", "v_val (USD$^{-1}$)"),
-                                      ("a", "a (boundary)"), ("t0", "t0 (s)")]):
-        bm = BENCH[p if p != "t0" else "t0"].mean()
-        ax.axhline(bm, color=MUTED, lw=1, ls="--")
-        ax.errorbar(g.index, g[p], yerr=g[p + "_sd"], color=BLUE, lw=2, marker="o",
-                    ms=6, capsize=3, label="HSSM (NUTS)")
+    ks = hssm_frame(pd.read_csv(path))
+    params = [p for p in COLS if p in FORTRAN_KSWEEP.columns]
+    g = ks.groupby("k")[params].agg(["mean", "std"])
+    fig, axes = plt.subplots(2, 4, figsize=(15, 7.6))
+    for ax, p in zip(axes.flat, params):
+        if p in BENCH.columns:
+            ax.axhline(BENCH[p].mean(), color=MUTED, lw=1, ls="--",
+                       label="per-subject benchmark")
+        ax.errorbar(g.index, g[(p, "mean")], yerr=g[(p, "std")], color=BLUE, lw=2,
+                    marker="o", ms=6, capsize=3, label="HSSM (NUTS), mean ± SD over perms")
         ax.plot(FORTRAN_KSWEEP.k, FORTRAN_KSWEEP[p], color=ORANGE, lw=2, marker="s",
-                ms=6, label="Fortran (ML)")
-        ax.set_xscale("log"); ax.set_xticks([1, 2, 4, 10, 50])
-        ax.set_xticklabels([1, 2, 4, 10, 50])
-        ax.set_xlabel("k trials per subject"); ax.set_ylabel(ylabel)
-        for sp in ("top", "right"): ax.spines[sp].set_visible(False)
-        ax.grid(axis="y", color="#e8e7e2", lw=0.8); ax.set_axisbelow(True)
-    axes[0].legend(frameon=False, fontsize=8)
+                ms=6, label="Fortran (ML), mean over perms")
+        ax.set_xscale("log"); ax.set_xticks(FORTRAN_KSWEEP.k)
+        ax.set_xticklabels(FORTRAN_KSWEEP.k)
+        ax.set_xlabel("k trials per subject"); ax.set_ylabel(LABELS[p])
+        style(ax)
+    axes.flat[-1].axis("off")
+    handles, labels = axes.flat[0].get_legend_handles_labels()
+    axes.flat[-1].legend(handles, labels, loc="center", frameon=False, fontsize=9)
     fig.suptitle("Population DDM-SA on k trials per subject: HSSM vs Fortran "
                  "(identical permutation files)", fontsize=11, color=INK)
     plt.tight_layout()
     plt.savefig(os.path.join(OUT, "figure_ksweep_hssm_vs_fortran.png"),
                 dpi=160, bbox_inches="tight")
     plt.close()
-    print("k-sweep comparison (HSSM mean vs Fortran, by k):")
-    for k, row in g.iterrows():
-        f = FORTRAN_KSWEEP[FORTRAN_KSWEEP.k == k].iloc[0]
-        print(f"  k={k:3d}  v_val {row.v_val:.4f} vs {f.v_val:.4f}   "
-              f"a {row.a:.3f} vs {f.a:.3f}   t0 {row.t0:.3f} vs {f.t0:.3f}")
+    print("k-sweep, HSSM mean vs Fortran by k:")
+    table = g.xs("mean", axis=1, level=1).join(FORTRAN_KSWEEP.set_index("k")[params],
+                                               lsuffix="_hssm", rsuffix="_fortran")
+    print(table.round(4).to_string())
 
 
 if __name__ == "__main__":

@@ -15,35 +15,40 @@ clone.
 
 ```bash
 pip install -e .                # core: numpy, scipy, pytensor
-pip install -e ".[sampling]"    # + pymc, arviz
-pip install -e ".[hssm]"        # + hssm, with pinned jax/numpyro
+pip install -e ".[sampling]"    # + pymc, arviz, numpyro (pinned jax)
+pip install -e ".[hssm]"        # + hssm
 pip install -e ".[test]"        # + pytest, numba (reference backend)
 ```
 
 ## Quickstart
 
 ```python
-from saddm.ddmsa import make_ddmsa_model, sample_ddmsa, sample_ddmsa_exact
+from saddm import make_ddmsa_model, sample_ddmsa, sample_ddmsa_exact
 
 data  = sample_ddmsa_exact(a=1.1, z=0.5, v=1.5, t=0.25,
                            sv=0.8, sa=0.5, st=0.08, n_trials=2000)
 idata = sample_ddmsa(make_ddmsa_model(data), backend="numpyro")
 ```
 
-With HSSM, register `saddm.ddmsa.ddmsa_logp` as a `loglik_kind="analytical"`
+`saddm.ddmsa_logp(rt, response, a, z, v, t, sv, sa, st, sz)` is the per-trial
+log-likelihood; every parameter may be a scalar or a per-trial vector. It has
+no lapse mixture: HSSM applies its own `p_outlier` on top of any analytical
+likelihood, and in plain PyMC one is a `pm.logaddexp` away.
+
+With HSSM, register `saddm.ddmsa_logp` as a `loglik_kind="analytical"`
 likelihood; `examples/estimate_HSSM_saddm.py` is the minimal adapter.
 
 ## Layout
 
 | path | contents |
 |---|---|
-| `saddm/` | `ddmsa.py`: the likelihood and PyMC glue. `core.py`/`integrator.py`/`model.py`: the Numba reference implementation. |
-| `tests/` | `test_ddmsa.py`: verification suite — s = 1 closed forms, agreement with the Numba/Fortran reference, finite-difference gradients, corner finiteness, per-trial broadcasting, C/Numba/JAX backend agreement (run directly with `--sample` for an end-to-end NUTS check). Remaining `test_*.py` cover the Numba reference, including `test_fortran_match.py`. |
-| `verification/` | `parameter_recovery.py`: 100-config NUTS recovery study. `recovery_figure.py`, `compare_to_fortran.py`: analysis and figures (read `results/reference/` by default; set `RESULTS` for a fresh run). |
-| `examples/` | HSSM applications: flat fit on cavanagh_theta, the per-subject + k-sweep replication of the Fortran intertemporal-choice analysis, and hierarchical variants. |
+| `saddm/` | `ddmsa.py`: the likelihood and PyMC glue. `core.py`/`integrator.py`/`model.py`: the Numba reference implementation (`reference` extra). |
+| `tests/` | `test_ddmsa.py`: verification suite — s = 1 closed forms, agreement with the Numba/Fortran reference, finite-difference gradients, corner finiteness, per-trial broadcasting, backend agreement, static-zero collapse (run directly with `--sample` for an end-to-end NUTS check). Remaining `test_*.py` cover the Numba reference. |
+| `verification/` | `parameter_recovery.py`: 100-config NUTS recovery study. `recovery_figure.py`, `compare_to_fortran.py`, `likelihood_figure.py`: analysis and figures (read `results/reference/` by default; set `RESULTS` for a fresh run). |
+| `examples/` | HSSM applications: flat fit on cavanagh_theta, the per-subject + k-sweep replication of the Fortran intertemporal-choice analysis, hierarchical variants, and the random-effects figure. |
 | `fortran/` | The Fortran programs that produced the benchmarks, with build notes. |
 | `data/itc_amasino/` | Amasino et al. (2019) trials, the Fortran benchmarks, and the exact k-sweep permutation files. |
-| `results/reference/` | Reference outputs: recovery, ITC, and hierarchical results with figures. Fresh runs write to gitignored `results/` subdirectories. |
+| `results/reference/` | Reference outputs: recovery, ITC, hierarchical, and cavanagh results with figures. Everything else under `results/` is gitignored, and every script writes there by default. |
 
 ## Citation
 

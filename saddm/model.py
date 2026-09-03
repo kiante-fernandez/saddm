@@ -9,9 +9,9 @@ class DDMModel:
         self.integrator = DDMIntegrator(n_points)
         self.min_p = 1e-10
         
-    def _validate_parameters(self, rt, a, z, v, ter, sv, sz, st, sa):
+    def _validate_parameters(self, a, z, v, ter, sv, sz, st, sa):
         """Validate DDM parameters and return boolean indicating validity."""
-        if any(map(lambda x: isinf(x) or isnan(x), [rt, a, z, v, ter, sv, sz, st, sa])):
+        if any(map(lambda x: isinf(x) or isnan(x), [a, z, v, ter, sv, sz, st, sa])):
             return False, "Parameter contains inf or nan values"
             
         if a <= 0.01:
@@ -26,18 +26,13 @@ class DDMModel:
             return False, f"Drift variability (sv={sv}) must be non-negative"
         if sz < 0:
             return False, f"Starting point variability (sz={sz}) must be non-negative"
-        if sz > min(z, 1-z):
-            return False, f"Starting point variability (sz={sz}) exceeds limits for z={z}"
         if st < 0:
             return False, f"Non-decision time variability (st={st}) must be non-negative"
         if sa < 0:
             return False, f"Boundary variability (sa={sa}) must be non-negative"
-        if sa > a/2:
-            return False, f"Boundary variability (sa={sa}) exceeds reasonable limits for a={a}"
-            
-        # RT-specific validation
-        if rt <= ter:
-            return False, f"Response time (rt={rt}) must be greater than non-decision time (ter={ter})"
+        if sa > a:
+            return False, f"Boundary variability (sa={sa}) exceeds the boundary a={a}"
+
         if ter - st/2 < 0:
             return False, f"Non-decision time variability (st={st}) too large for ter={ter}"
             
@@ -51,13 +46,15 @@ class DDMModel:
         """Compute full DDM PDF with all variability parameters and validation."""
         # Parameter validation
         if validate:
-            valid, reason = self._validate_parameters(rt, a, z, v, ter, sv, sz, st, sa)
+            valid, reason = self._validate_parameters(a, z, v, ter, sv, sz, st, sa)
             if not valid:
                 if strict:
                     raise ValueError(f"Invalid parameters: {reason}")
                 else:
                     return self.min_p
-            
+        if rt <= ter:
+            return self.min_p
+
         # Clean small variability parameters
         sv = 0.0 if sv < 1e-6 else sv
         sz = 0.0 if sz < 1e-6 else sz
@@ -89,7 +86,7 @@ class DDMModel:
         a, z, v, ter, sv, sz, st, sa = params
         
         if validate:
-            valid, reason = self._validate_parameters(1.0, a, z, v, ter, sv, sz, st, sa)  # Use dummy RT
+            valid, reason = self._validate_parameters(a, z, v, ter, sv, sz, st, sa)
             if not valid:
                 if strict:
                     raise ValueError(f"Invalid parameters: {reason}")
@@ -105,8 +102,6 @@ class DDMModel:
                 
                 # Calculate PDF for this trial
                 p = self.pdf(abs(rt), a, eff_z, eff_v, ter, sv, sz, st, sa)
-                if p <= 0:  # Handle invalid probabilities
-                    return -np.inf
                 total += log(p)
                 
             except (ValueError, OverflowError):
