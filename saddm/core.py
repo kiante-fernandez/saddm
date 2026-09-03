@@ -1,5 +1,5 @@
 from numba import njit, float64
-from math import pi, sqrt, exp, log, sin, fabs, ceil, floor
+from math import pi, sqrt, exp, log, sin, ceil, floor
 
 @njit(float64(float64, float64, float64), cache=True)
 def ftt_01w(tt, w, err):

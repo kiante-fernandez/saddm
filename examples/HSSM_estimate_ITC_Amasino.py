@@ -24,7 +24,6 @@ numpyro.set_host_device_count(2)
 
 import arviz as az
 import hssm
-import numpy as np
 import pandas as pd
 import pytensor.tensor as pt
 

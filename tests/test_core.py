@@ -1,6 +1,4 @@
-import pytest
 import numpy as np
-from math import sqrt, pi, exp
 from saddm.core import ddm_pdf_core, ftt_01w
 
 # Parameters in s=1 scale:

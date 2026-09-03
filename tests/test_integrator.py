@@ -1,6 +1,5 @@
 import pytest
 import numpy as np
-from math import sqrt, pi, exp
 from saddm.integrator import DDMIntegrator
 from saddm.core import ddm_pdf_core
 

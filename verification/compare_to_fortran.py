@@ -5,7 +5,6 @@ Reads results from results/reference/itc_amasino by default (the shipped
 reference outputs); point RESULTS at a fresh run to compare a reproduction.
 """
 
-import glob
 import os
 
 import matplotlib

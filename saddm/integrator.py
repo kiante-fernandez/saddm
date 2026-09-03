@@ -1,7 +1,5 @@
-import numpy as np
-from numba import njit, float64
+from numba import njit
 from scipy.special import roots_legendre
-from math import sqrt, pi, exp
 from .core import ddm_pdf_core
 
 class DDMIntegrator:

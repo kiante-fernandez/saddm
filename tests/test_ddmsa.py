@@ -132,7 +132,7 @@ def check_1_reference():
     return ok
 
 
-def check_3_gradients():
+def check_2_gradients():
     """Analytic gradients vs central finite differences."""
     print("\n[3] gradients vs finite differences")
     f_logp, f_grad = _fn()
@@ -161,7 +161,7 @@ def check_3_gradients():
     return ok
 
 
-def check_4_edges():
+def check_3_edges():
     """logp and gradients must stay finite everywhere NUTS can wander."""
     print("\n[4] finiteness in the corners")
     f_logp, f_grad = _fn()
@@ -196,7 +196,7 @@ def check_4_edges():
     return ok
 
 
-def check_5_vector_params():
+def check_4_vector_params():
     """Vector (per-trial) parameters must reproduce the scalar result."""
     print("\n[5] per-trial parameter broadcasting")
     data = simulate_ddmsa(a=1.1, z=0.5, v=1.5, t=0.25, sv=0.8, sa=0.5, st=0.08,
@@ -231,7 +231,7 @@ def check_5_vector_params():
     return ok
 
 
-def check_6_backends():
+def check_5_backends():
     """C, Numba, and JAX backends must agree; report per-gradient timings."""
     print("\n[6] backend agreement and speed")
     data = simulate_ddmsa(a=1.1, z=0.5, v=1.5, t=0.25, sv=0.8, sa=0.5, st=0.08,
@@ -267,7 +267,7 @@ def check_6_backends():
     return ok
 
 
-def check_7_nuts(backend="numpyro", draws=750, tune=750, chains=2, n_trials=2000):
+def check_6_nuts(backend="numpyro", draws=750, tune=750, chains=2, n_trials=2000):
     """End-to-end gradient MCMC: sampler health plus a recovery report.
 
     Passing requires healthy geometry (no divergences, r_hat below 1.03, usable
@@ -329,19 +329,19 @@ def test_reference_agreement():
 
 
 def test_gradients():
-    assert check_3_gradients()
+    assert check_2_gradients()
 
 
 def test_edge_finiteness():
-    assert check_4_edges()
+    assert check_3_edges()
 
 
 def test_vector_params():
-    assert check_5_vector_params()
+    assert check_4_vector_params()
 
 
 def test_backends():
-    assert check_6_backends()
+    assert check_5_backends()
 
 
 if __name__ == "__main__":
@@ -353,13 +353,13 @@ if __name__ == "__main__":
     results = {
         "0 s=1 scale": check_0_scale(),
         "1 reference": check_1_reference(),
-        "3 gradients": check_3_gradients(),
-        "4 edges": check_4_edges(),
-        "5 broadcasting": check_5_vector_params(),
-        "6 backends": check_6_backends(),
+        "2 gradients": check_2_gradients(),
+        "3 edges": check_3_edges(),
+        "4 broadcasting": check_4_vector_params(),
+        "5 backends": check_5_backends(),
     }
     if args.sample:
-        results["7 NUTS"] = check_7_nuts(backend=args.backend)
+        results["6 NUTS"] = check_6_nuts(backend=args.backend)
 
     print("\n" + "=" * 52)
     for k, v in results.items():
