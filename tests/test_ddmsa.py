@@ -194,8 +194,8 @@ def check_3_edges():
 
 
 def check_bounds():
-    """sa <= 2a and sz <= 2*min(z, 1-z): mass is 1 at each bound inclusive,
-    rejected past it, and the Numba reference draws the same line."""
+    """sa <= 2a, sz <= 2*min(z, 1-z), st <= 2t: mass is 1 at each bound
+    inclusive, rejected past it, and the Numba reference draws the same line."""
     print("\n[+] support bounds")
     from scipy.integrate import quad
 
@@ -205,17 +205,19 @@ def check_bounds():
     a, v, t = 1.1, 1.5, 0.25
     model = DDMModel(n_points=15)
 
-    def logp(rt, resp, z, sa=0.0, sz=0.0):
-        return float(f_logp([rt], [float(resp)], a, z, v, t, 0.0, sa, 0.0, sz)[0])
+    def logp(rt, resp, z, sa=0.0, st=0.0, sz=0.0):
+        return float(f_logp([rt], [float(resp)], a, z, v, t, 0.0, sa, st, sz)[0])
 
     def ref(z, **w):
         return model.pdf(0.5, a, z, v, t, validate=False, **w) > model.min_p
 
     ok = True
-    for name, z, bound in [("sa", 0.5, dict(sa=2.0 * a)), ("sz", 0.1, dict(sz=0.2))]:
+    for name, z, bound in [("sa", 0.5, dict(sa=2.0 * a)), ("sz", 0.1, dict(sz=0.2)),
+                           ("st", 0.5, dict(st=2.0 * t))]:
         inside = {k: 0.99 * w for k, w in bound.items()}
         past = {k: 1.01 * w for k, w in bound.items()}
-        mass = sum(quad(lambda rt: np.exp(logp(rt, resp, z, **bound)), t + 1e-6, t + 30,
+        lo = t - bound.get("st", 0.0) / 2
+        mass = sum(quad(lambda rt: np.exp(logp(rt, resp, z, **bound)), lo + 1e-6, t + 30,
                         limit=200)[0]
                    for resp in (0, 1))
         rejected = np.isclose(logp(t + 0.2, 0, z, **past), float(_LOG_TINY))
