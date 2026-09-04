@@ -36,14 +36,6 @@ N_TUNE = 2000
 TARGET_ACCEPT = 0.90
 NUTS_BACKEND = "numpyro"   # ~4x the ESS/s of the default C backend
 
-# Parameter ranges, all in the s = 1 convention used by saddm.ddmsa.
-# The Fortran source (fortran/fit_sa_simplex.f90:857-867) works at Ratcliff's
-# s = 0.1, so a, v, sv (eta) and sa are multiplied by 10 to land here; ter, st and
-# relative z are scale-free. Fortran a=0.11, v=0.01..0.32, eta=0.23, sa=0.10 map to
-# a=1.1, v=0.1..3.2, sv=2.3, sa=1.0.
-# sa is drawn as a FRACTION of a (sa = sa_frac * a) so the boundary distribution
-# a +/- sa/2 can never straddle zero, which an absolute range shared across all a
-# cannot guarantee.
 PARAM_RANGES = {
     'a':      (0.65, 2.40),   # boundary separation
     'z':      (0.30, 0.70),   # relative starting point
