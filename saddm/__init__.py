@@ -5,9 +5,6 @@ Parameters (s = 1): a boundary separation, z relative start point in (0, 1),
 v drift rate, t non-decision time (seconds); sv Gaussian drift variability;
 sa, st, sz uniform full-width variability of boundary, non-decision time, and
 start point.
-
-The Numba reference implementation (saddm.core, saddm.integrator, saddm.model)
-needs the `reference` extra and is imported explicitly.
 """
 
 __version__ = "0.1.1"

@@ -31,10 +31,7 @@ import hssm
 import pandas as pd
 import pytensor.tensor as pt
 
-import sys
-
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
-from saddm.ddmsa import ddmsa_logp
+from saddm import ddmsa_logp
 
 VARIANT = os.environ.get("VARIANT", "cav_loglogit")
 OUT_DIR = os.environ.get("OUT_DIR", os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "results", "hier"))
@@ -44,20 +41,12 @@ DRAWS = int(os.environ.get("DRAWS", "1000"))
 TUNE = int(os.environ.get("TUNE", "1000"))
 TARGET_ACCEPT = float(os.environ.get("TARGET_ACCEPT", "0.8"))
 CHAINS = 2
+PARAMS = ["v", "a", "z", "t", "sv", "sa", "st"]
 
 
-def logp_cav(data, v, a, z, t, sv, sa, st):
-    data = pt.reshape(data, (-1, 2))
-    return ddmsa_logp(pt.abs(data[:, 0]), data[:, 1], a=2.0 * a, z=z, v=v,
-                      t=t + st / 2.0, sv=sv, sa=2.0 * sa, st=st)
-
-
-def logp_itc_plain(data, v, a, z, t):
-    data = pt.reshape(data, (-1, 2))
-    return ddmsa_logp(pt.abs(data[:, 0]), data[:, 1], a=a, z=z, v=v, t=t)
-
-
-def logp_itc_sa(data, v, a, z, t, sv, sa, st):
+def ddmsa(data, v, a, z, t, sv, sa, st):
+    """ddmsa_logp as an HSSM loglik. a and the widths are in saddm's full units;
+    t is the lower edge of the non-decision distribution, so t0 = t + st/2."""
     data = pt.reshape(data, (-1, 2))
     return ddmsa_logp(pt.abs(data[:, 0]), data[:, 1], a=a, z=z, v=v,
                       t=t + st / 2.0, sv=sv, sa=sa, st=st)
@@ -66,10 +55,9 @@ def logp_itc_sa(data, v, a, z, t, sv, sa, st):
 def build():
     if VARIANT.startswith("cav"):
         cav = hssm.load_data("cavanagh_theta")
-        params = ["v", "a", "z", "t", "sv", "sa", "st"]
         min_rt = float(cav.rt.min())
-        bounds = {"v": (-10.0, 10.0), "a": (0.3, 3.0), "z": (0.05, 0.95),
-                  "sv": (0.0, 3.0), "sa": (0.0, 1.0), "st": (0.0, 0.6)}
+        bounds = {"v": (-10.0, 10.0), "a": (0.6, 6.0), "z": (0.05, 0.95),
+                  "sv": (0.0, 3.0), "sa": (0.0, 2.0), "st": (0.0, 2.0)}
         if VARIANT == "cav_loglogit":
             bounds["t"] = (0.0, 1.0)
             include = [
@@ -86,8 +74,8 @@ def build():
             ]
             link = None
         return hssm.HSSM(
-            data=cav, model="ddmsa", loglik=logp_cav, loglik_kind="analytical",
-            model_config={"response": ["rt", "response"], "list_params": params,
+            data=cav, model="ddmsa", loglik=ddmsa, loglik_kind="analytical",
+            model_config={"response": ["rt", "response"], "list_params": PARAMS,
                           "choices": (-1, 1), "bounds": bounds},
             p_outlier=0.05, include=include, link_settings=link,
         )
@@ -102,14 +90,9 @@ def build():
         "tim": d.time_diff_days.values.astype(float),
         "subj": d.subj_ident.values,
     })
-    if VARIANT == "itc_hier_sa":
-        params = ["v", "a", "z", "t", "sv", "sa", "st"]
-        bounds = {"v": (-10.0, 10.0), "a": (0.3, 6.0), "z": (0.05, 0.95),
-                  "t": (0.0, 1.6), "sv": (0.0, 2.0), "sa": (0.0, 3.0),
-                  "st": (0.0, 2.0)}
-    else:
-        params = ["v", "a", "z", "t"]
-        bounds = {"v": (-10.0, 10.0), "a": (0.3, 6.0), "z": (0.05, 0.95), "t": (0.0, 1.6)}
+    bounds = {"v": (-10.0, 10.0), "a": (0.3, 6.0), "z": (0.05, 0.95),
+              "t": (0.0, 1.6), "sv": (0.0, 2.0), "sa": (0.0, 3.0), "st": (0.0, 2.0)}
+    fixed = dict(sv=0.0, sa=0.0, st=0.0) if VARIANT == "itc_hier" else {}
     include = [
         {"name": "v", "formula": "v ~ 1 + val + tim + (1|subj)", "link": "identity",
          "prior": {"Intercept": {"name": "Normal", "mu": 0.0, "sigma": 2.0},
@@ -120,11 +103,10 @@ def build():
     ]
     return hssm.HSSM(
         data=df, model="ddm_itc",
-        loglik=logp_itc_sa if VARIANT == "itc_hier_sa" else logp_itc_plain,
-        loglik_kind="analytical",
-        model_config={"response": ["rt", "response"], "list_params": params,
+        loglik=ddmsa, loglik_kind="analytical",
+        model_config={"response": ["rt", "response"], "list_params": PARAMS,
                       "choices": (-1, 1), "bounds": bounds},
-        p_outlier=0.05, include=include, link_settings="log_logit",
+        p_outlier=0.05, include=include, link_settings="log_logit", **fixed,
     )
 
 

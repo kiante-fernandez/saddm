@@ -10,34 +10,20 @@ import matplotlib.pyplot as plt
 import pytensor.tensor as pt
 
 import os
-import sys
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
-from saddm.ddmsa import ddmsa_logp
+from saddm import ddmsa_logp
 
 OUT_DIR = os.environ.get("OUT_DIR", os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "results", "cavanagh"))
 PARAMS = ["v", "a", "z", "t", "sv", "sa", "st"]
 
 
-def logp_ddmsa(data, v, a, z, t, sv, sa, st):
-    # HSSM conventions -> saddm conventions: HSSM's a is the half boundary
-    # separation (saddm uses the full one), and t here is the LOWER EDGE of the
-    # uniform non-decision distribution (actual non-decision time = t + st/2).
-    # Sampling the edge decorrelates t from st; sampling them independently makes
-    # the posterior a ridge that NUTS cannot traverse.
+def ddmsa(data, v, a, z, t, sv, sa, st):
+    """ddmsa_logp as an HSSM loglik. a and the widths are in saddm's full units;
+    t is the lower edge of the non-decision distribution, so t0 = t + st/2."""
     data = pt.reshape(data, (-1, 2))
-    return ddmsa_logp(
-        pt.abs(data[:, 0]),
-        data[:, 1],
-        a=2.0 * a,
-        z=z,
-        v=v,
-        t=t + st / 2.0,
-        sv=sv,
-        sa=2.0 * sa,
-        st=st,
-    )
+    return ddmsa_logp(pt.abs(data[:, 0]), data[:, 1], a=a, z=z, v=v,
+                      t=t + st / 2.0, sv=sv, sa=sa, st=st)
 
 
 cav = hssm.load_data("cavanagh_theta")
@@ -45,7 +31,7 @@ cav = hssm.load_data("cavanagh_theta")
 model = hssm.HSSM(
     data=cav,
     model="ddmsa",
-    loglik=logp_ddmsa,
+    loglik=ddmsa,
     loglik_kind="analytical",
     model_config={
         "response": ["rt", "response"],
@@ -53,12 +39,12 @@ model = hssm.HSSM(
         "choices": (-1, 1),
         "bounds": {
             "v": (-10.0, 10.0),
-            "a": (0.3, 3.0),
+            "a": (0.6, 6.0),
             "z": (0.05, 0.95),
             "t": (0.0, float(cav.rt.min())),
             "sv": (0.0, 3.0),
-            "sa": (0.0, 1.0),
-            "st": (0.0, 0.6),
+            "sa": (0.0, 2.0),
+            "st": (0.0, 2.0),
         },
     },
     p_outlier=0.05,

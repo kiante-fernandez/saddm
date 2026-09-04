@@ -24,6 +24,7 @@ import numpy as np
 import pytensor
 import pytensor.tensor as pt
 
+from reference import DDMModel, ddm_pdf_core
 from saddm.ddmsa import (DDMSA, _LOG_TINY, _is_static_zero, ddmsa_logp,
                          sample_ddmsa_exact, simulate_ddmsa)
 
@@ -87,9 +88,6 @@ def check_0_scale():
 def check_1_reference():
     """New density vs the Numba core PDF and quadrature integrator."""
     print("\n[1] vs Numba reference")
-    from saddm.core import ddm_pdf_core
-    from saddm.model import DDMModel
-
     f_logp, _ = _fn(n_quad=15)
     model = DDMModel(n_points=15)
     worst = 0.0
@@ -114,8 +112,7 @@ def check_1_reference():
         (1.1, 0.5, 1.5, 0.25, 0.8, 1.6, 0.08, 0.0),
     ]:
         for rt in [t + 0.1, t + 0.35, t + 0.9]:
-            ref = model.pdf(rt, a, z, v, t, sv=sv, sa=sa, st=st, sz=sz,
-                            validate=False)
+            ref = model.pdf(rt, a, z, v, t, sv=sv, sa=sa, st=st, sz=sz)
             if ref < 1e-20:
                 continue
             got = np.exp(f_logp([rt], [0.0], a, z, v, t, sv, sa, st, sz)[0])
@@ -199,8 +196,6 @@ def check_bounds():
     print("\n[+] support bounds")
     from scipy.integrate import quad
 
-    from saddm.model import DDMModel
-
     f_logp, _ = _fn()
     a, v, t = 1.1, 1.5, 0.25
     model = DDMModel(n_points=15)
@@ -209,7 +204,7 @@ def check_bounds():
         return float(f_logp([rt], [float(resp)], a, z, v, t, 0.0, sa, st, sz)[0])
 
     def ref(z, **w):
-        return model.pdf(0.5, a, z, v, t, validate=False, **w) > model.min_p
+        return model.pdf(0.5, a, z, v, t, **w) > model.min_p
 
     ok = True
     for name, z, bound in [("sa", 0.5, dict(sa=2.0 * a)), ("sz", 0.1, dict(sz=0.2)),

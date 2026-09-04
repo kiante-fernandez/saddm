@@ -30,10 +30,7 @@ import hssm
 import pandas as pd
 import pytensor.tensor as pt
 
-import sys
-
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
-from saddm.ddmsa import ddmsa_logp
+from saddm import ddmsa_logp
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 SRC_CSV = os.path.join(ROOT, "data/itc_amasino/itc_amasino.csv")
@@ -57,23 +54,18 @@ KS = [1, 2, 4, 10, 50]
 N_PERMS = 5
 DRAWS, TUNE, CHAINS = 1000, 1000, 2
 SUFFIX = "_plain" if PLAIN else ""
-if PLAIN:
-    PARAMS = ["v", "a", "z", "t"]
-    REPORT = ["v_Intercept", "v_val", "v_tim", "a", "z", "t"]
-else:
-    PARAMS = ["v", "a", "z", "t", "sv", "sa", "st"]
-    REPORT = ["v_Intercept", "v_val", "v_tim", "a", "z", "t", "sv", "sa", "st"]
+PARAMS = ["v", "a", "z", "t", "sv", "sa", "st"]
+FIXED = dict(sv=0.0, sa=0.0, st=0.0) if PLAIN else {}
+REPORT = [p for p in ["v_Intercept", "v_val", "v_tim", "a", "z", "t", "sv", "sa", "st"]
+          if p not in FIXED]
 
 
-def logp_ddmsa_itc(data, v, a, z, t, sv, sa, st):
+def ddmsa(data, v, a, z, t, sv, sa, st):
+    """ddmsa_logp as an HSSM loglik. a and the widths are in saddm's full units;
+    t is the lower edge of the non-decision distribution, so t0 = t + st/2."""
     data = pt.reshape(data, (-1, 2))
     return ddmsa_logp(pt.abs(data[:, 0]), data[:, 1], a=a, z=z, v=v,
                       t=t + st / 2.0, sv=sv, sa=sa, st=st)
-
-
-def logp_ddm_itc(data, v, a, z, t):
-    data = pt.reshape(data, (-1, 2))
-    return ddmsa_logp(pt.abs(data[:, 0]), data[:, 1], a=a, z=z, v=v, t=t)
 
 
 def fit_one(df, tag):
@@ -85,15 +77,16 @@ def fit_one(df, tag):
     model = hssm.HSSM(
         data=df,
         model="ddm_itc" if PLAIN else "ddmsa_itc",
-        loglik=logp_ddm_itc if PLAIN else logp_ddmsa_itc,
+        loglik=ddmsa,
         loglik_kind="analytical",
         model_config={
             "response": ["rt", "response"],
-            "list_params": list(PARAMS),
+            "list_params": PARAMS,
             "choices": (-1, 1),
-            "bounds": {k: bounds[k] for k in PARAMS},
+            "bounds": bounds,
         },
         p_outlier=0.05,
+        **FIXED,
         include=[{
             "name": "v",
             "formula": "v ~ 1 + val + tim",
@@ -115,7 +108,7 @@ def fit_one(df, tag):
     for p in REPORT:
         row[p] = float(s.loc[p, "mean"])
         row[p + "_sd"] = float(s.loc[p, "sd"])
-    row["t0"] = row["t"] if PLAIN else row["t"] + row["st"] / 2.0
+    row["t0"] = row["t"] + row.get("st", 0.0) / 2.0
     return row
 
 

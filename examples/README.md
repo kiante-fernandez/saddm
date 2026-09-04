@@ -2,17 +2,20 @@
 
 | script | what it does |
 |---|---|
-| `estimate_HSSM_saddm.py` | Flat DDM-SA on `cavanagh_theta` (ships with HSSM) — the minimal adapter for registering `ddmsa_logp` as a custom analytical likelihood. Trace figure to `OUT_DIR` (default `results/cavanagh`). |
+| `estimate_HSSM_saddm.py` | Flat DDM-SA on `cavanagh_theta` (bundled with HSSM) — the minimal adapter for registering `ddmsa_logp` as a custom analytical likelihood. Trace figure to `OUT_DIR` (default `results/cavanagh`). |
 | `HSSM_estimate_ITC_Amasino.py` | Per-subject fits (212 subjects; `PLAIN=1` for the plain-DDM benchmark spec) and the population k-sweep on the exact permutation files the Fortran campaign used. `STAGE`, `SHARD`/`N_SHARDS`, `OUT_DIR` (default `results/itc_amasino`). |
 | `HSSM_hierarchical.py` | Hierarchical variants (`VARIANT`): cavanagh DDM-SA with participant random effects; ITC plain and full-SA hierarchies. `DRAWS`/`TUNE`/`TARGET_ACCEPT`, `OUT_DIR` (default `results/hier`). |
-| `hierarchical_figure.py` | Participant random-effect intervals from a hierarchical summary CSV (`SUMMARY`, default the shipped `cav_loglogit` run). |
+| `hierarchical_figure.py` | Participant random-effect intervals from a hierarchical summary CSV (`SUMMARY`, default the `cav_loglogit` run in `results/reference/hierarchical`). |
 
 ## Conventions the adapters encode
 
-- **HSSM's `a` is the half boundary separation** (its built-in DDM doubles it
-  internally); `saddm` uses the full separation, so cavanagh adapters pass
-  `2*a` and `2*sa`. The ITC scripts define `a` in full-separation units
-  directly, matching the Fortran benchmark.
+- **Every script uses `saddm`'s full units.** HSSM's built-in DDM takes `a` as
+  the half separation, so a fitted `a` here is twice what HSSM's own `ddm`
+  reports on the same data, and the bounds are set accordingly.
+- **One adapter, the `ddmsa` in each script, serves every model.** A
+  plain DDM is the same adapter with `sv=0.0, sa=0.0, st=0.0` passed to
+  `hssm.HSSM`; the likelihood collapses fixed zero widths to a single
+  quadrature node.
 - **Non-decision time is sampled by its lower edge.** With `st > 0` the
   earliest response is at `t − st/2`, so bounding `t` by min(RT) excludes the
   truth (and spuriously collapses `sa`); sampling `t` and `st` independently

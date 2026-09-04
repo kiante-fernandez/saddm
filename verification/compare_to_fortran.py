@@ -21,17 +21,22 @@ OUT = os.environ.get("OUT", os.path.join(ROOT, "results/figures"))
 BLUE, ORANGE, MUTED, INK = "#2a78d6", "#eb6834", "#8a8983", "#1a1a19"
 
 # Fortran column -> HSSM column. Fortran reports the start point mirrored
-# (z_fortran = 1 - z), which fortran_frame undoes.
+# (z_fortran = 1 - z) and the k-sweep reports sa and st as standard deviations
+# of the uniform (sd_a, sd_t0); fortran_frame undoes both.
 COLS = {"v0": "v_Intercept", "v_val": "v_val", "v_time": "v_tim",
-        "a": "a", "t0": "t0", "z": "z", "sv": "sv"}
+        "a": "a", "t0": "t0", "z": "z", "sv": "sv", "sa": "sa", "st": "st"}
 LABELS = {"v0": "v0 (drift intercept)", "v_val": "v_val (USD$^{-1}$)",
           "v_time": "v_time (day$^{-1}$)", "a": "a (boundary)", "t0": "t0 (s)",
-          "z": "z (start point)", "sv": "sv (drift variability)"}
+          "z": "z (start point)", "sv": "sv (drift variability)",
+          "sa": "sa (boundary variability)", "st": "st (non-decision var.)"}
 
 
 def fortran_frame(df):
     df = df.copy()
     df["z"] = 1.0 - df["z"]
+    for sd, width in (("sd_a", "sa"), ("sd_t0", "st")):
+        if sd in df:
+            df[width] = df.pop(sd) * np.sqrt(12.0)
     return df
 
 
@@ -88,7 +93,7 @@ def ksweep():
     ks = hssm_frame(pd.read_csv(path))
     params = [p for p in COLS if p in FORTRAN_KSWEEP.columns]
     g = ks.groupby("k")[params].agg(["mean", "std"])
-    fig, axes = plt.subplots(2, 4, figsize=(15, 7.6))
+    fig, axes = plt.subplots(2, 5, figsize=(18, 7.6))
     for ax, p in zip(axes.flat, params):
         if p in BENCH.columns:
             ax.axhline(BENCH[p].mean(), color=MUTED, lw=1, ls="--",
