@@ -31,8 +31,7 @@ class DDMModel:
         if sa < 0:
             return False, f"Boundary variability (sa={sa}) must be non-negative"
         if sa > 2 * a:
-            return False, (f"Boundary variability (sa={sa}) is too large: a_i = a +/- sa/2 "
-                           f"must stay positive, so sa must be <= 2*a (a={a})")
+            return False, f"Boundary variability (sa={sa}) must be <= 2*a (a={a})"
 
         if ter - st/2 < 0:
             return False, f"Non-decision time variability (st={st}) too large for ter={ter}"

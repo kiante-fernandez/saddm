@@ -144,7 +144,6 @@ def ddmsa_logp(rt, response, a, z, v, t,
     ones = pt.ones_like(rt)
 
     a_v = pt.as_tensor_variable(a).astype("float64") * ones
-    sa_full = pt.as_tensor_variable(sa).astype("float64") * ones
     z_v = pt.as_tensor_variable(z).astype("float64") * ones
     v_v = pt.as_tensor_variable(v).astype("float64") * ones
     t_v = pt.as_tensor_variable(t).astype("float64") * ones
@@ -190,14 +189,10 @@ def ddmsa_logp(rt, response, a, z, v, t,
 
     result = pt.logsumexp((log_pdf + log_w).reshape((rt.shape[0], -1)), axis=-1)
 
-    # a_i ~ Uniform(a - sa/2, a + sa/2) only stays supported on a_i > 0 while
-    # sa <= 2*a (Gauss-Legendre nodes are strictly inside (-1, 1), so the grid
-    # stays strictly positive even exactly at sa = 2*a); past that the nominal
-    # support crosses zero and the grid's floor-and-keep clipping on the a axis
-    # (pt.maximum(a_grid, 1e-3) above) silently under-normalizes instead of
-    # raising. Reject explicitly instead, matching the sa <= 2*a bound enforced
-    # by saddm/integrator.py and saddm/model.py.
-    sa_valid = pt.le(sa_full, 2.0 * a_v)
+    # a_i ~ Uniform(a - sa/2, a + sa/2) stays positive only while sa <= 2*a
+    # (inclusive: Gauss-Legendre nodes never reach the interval edge). Past it
+    # the a_grid floor above silently under-normalizes, so reject instead.
+    sa_valid = pt.le(sa_w, 2.0 * a_v)
     return pt.switch(sa_valid, result, _LOG_TINY)
 
 

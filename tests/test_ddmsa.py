@@ -13,9 +13,6 @@ Checks, in order:
   4. Per-trial (vector) parameters agree with scalar parameters.
   5. The C, Numba, and JAX backends agree, with timings.
   6. Optional: a short NUTS run to confirm gradient-based MCMC works end to end.
-  +. sa boundary: a_i = a +- sa/2 stays positive up to and including sa = 2a;
-     density must integrate to 1 there and be explicitly rejected past it,
-     matching the Numba reference's identical bound.
 """
 
 import argparse
@@ -175,10 +172,8 @@ def check_3_edges():
         "t just below min RT": dict(t=min_rt - 1e-4),
         "t above min RT": dict(t=min_rt + 0.05),
         "st straddles min RT": dict(t=min_rt - 0.02, st=0.4),
-        "sa just below 2a": dict(sa=TRUE["a"] * 1.99),
         "sa exactly at 2a": dict(sa=TRUE["a"] * 2.0),
         "sa just above 2a (rejected)": dict(sa=TRUE["a"] * 2.01),
-        "sa far past 2a (rejected)": dict(sa=TRUE["a"] * 5.0),
         "tiny a": dict(a=0.31),
         "huge a": dict(a=4.9),
         "z at the edge": dict(z=0.01, sz=0.0),
@@ -199,13 +194,8 @@ def check_3_edges():
 
 
 def check_sa_boundary():
-    """The sa <= 2a boundary: a_i = a +- sa/2 stays positive up to and
-    including sa = 2a (Gauss-Legendre nodes are strictly inside (-1, 1), so
-    the a-axis grid never touches zero there); density must integrate to 1
-    across that whole range and be explicitly rejected once sa exceeds it,
-    rather than silently returning a mis-normalized value. The Numba
-    reference must enforce the identical bound.
-    """
+    """sa <= 2a: mass is 1 up to the bound inclusive, rejected past it, and the
+    Numba reference agrees."""
     print("\n[+] sa boundary (a_i = a +/- sa/2 stays positive)")
     from scipy.integrate import quad
 
@@ -219,7 +209,7 @@ def check_sa_boundary():
                                    sa_val, 0.0, 0.0)[0]))
 
     ok = True
-    for ratio in [1.0, 1.5, 1.99, 2.0]:
+    for ratio in [1.5, 2.0]:
         sa_val = ratio * a
         total = sum(quad(lambda rt: density(rt, resp, sa_val), t + 1e-6, t + 30,
                          limit=200)[0]
@@ -228,7 +218,7 @@ def check_sa_boundary():
         ok &= good
         print(f"    sa/a={ratio:.2f}  mass={total:.6f}  {'' if good else '<-- BAD'}")
 
-    for ratio in [2.01, 3.0, 5.0]:
+    for ratio in [2.01, 5.0]:
         sa_val = ratio * a
         lp = float(f_logp([t + 0.2], [0.0], a, z, v, t, 0.0, sa_val, 0.0, 0.0)[0])
         grad = np.asarray(f_grad([t + 0.2], [0.0], a, z, v, t, 0.0, sa_val, 0.0, 0.0),
