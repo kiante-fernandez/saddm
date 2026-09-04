@@ -112,7 +112,7 @@ def check_1_reference():
         (1.1, 0.5, 3.2, 0.22, 2.3, 1.0, 0.10, 0.0),
         (1.1, 0.5, 2.0, 0.22, 1.0, 0.5, 0.10, 0.2),
         # a < sa < 2a: legal (a_i = a +- sa/2 stays positive) but used to be
-        # rejected outright by the Numba reference's old sa < a bound.
+        # rejected outright by the Numba reference's old sa <= a bound.
         (1.1, 0.5, 1.5, 0.25, 0.8, 1.6, 0.08, 0.0),
     ]:
         for rt in [t + 0.1, t + 0.35, t + 0.9]:
