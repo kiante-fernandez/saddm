@@ -16,10 +16,8 @@ sa, st and sz are full widths, matching simulate_ddmsa. The drift integral is
 analytic (Ratcliff's Gaussian-mixture form); the uniform integrals use
 Gauss-Legendre quadrature, accurate to ~1e-6 at the default 7 nodes.
 
-Ratcliff's s = 0.1 convention (used by fortran/fit_sa_simplex.f90) converts to
-this module by multiplying a, v, sv (eta) and sa by 10 and leaving t, st and
-relative z alone: Fortran a=0.11, v=0.01..0.32, eta=0.23, sa=0.10 becomes
-a=1.1, v=0.1..3.2, sv=2.3, sa=1.0.
+Ratcliff's s = 0.1 convention converts to this module by multiplying a, v, sv
+and sa by 10; t, st and relative z are unchanged.
 
     from saddm.ddmsa import make_ddmsa_model, sample_ddmsa
 

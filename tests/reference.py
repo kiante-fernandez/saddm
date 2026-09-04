@@ -1,5 +1,5 @@
-"""Numba reference for the DDM-SA density, ported from fortran/fit_sa_simplex.f90
-(FC/GQ/FFC/COR lineage). Shares no code with saddm.ddmsa; test_ddmsa.py holds
+"""Numba reference for the DDM-SA density, ported from the FC/GQ/FFC/COR routines
+in fortran/fit_ddm_itc_sa.f90. Shares no code with saddm.ddmsa; test_ddmsa.py holds
 the PyTensor likelihood to it."""
 
 from math import ceil, exp, floor, isfinite, log, pi, sin, sqrt
