@@ -189,9 +189,8 @@ def ddmsa_logp(rt, response, a, z, v, t,
 
     result = pt.logsumexp((log_pdf + log_w).reshape((rt.shape[0], -1)), axis=-1)
 
-    # a_i ~ Uniform(a - sa/2, a + sa/2) stays positive only while sa <= 2*a
-    # (inclusive: Gauss-Legendre nodes never reach the interval edge). Past it
-    # the a_grid floor above silently under-normalizes, so reject instead.
+    # a_i = a +/- sa/2 stays positive only while sa <= 2*a; past it the floor above
+    # silently under-normalizes.
     sa_valid = pt.le(sa_w, 2.0 * a_v)
     return pt.switch(sa_valid, result, _LOG_TINY)
 

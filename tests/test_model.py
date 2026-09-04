@@ -160,10 +160,8 @@ def test_model_full_width_conventions(model):
 
     assert model.pdf(rt, a, z, v, ter, sz=0.6) > model.min_p
     assert model.pdf(rt, a, z, v, ter, sa=0.9) > model.min_p
-    # a < sa < 2a is legal: a_i = a +- sa/2 still stays positive.
     assert model.pdf(rt, a, z, v, ter, sa=2.5) > model.min_p
     assert model.pdf(rt, a, z, v, ter, sz=1.2) == model.min_p
-    # sa > 2a lets a_i go non-positive; must be rejected.
     assert model.pdf(rt, a, z, v, ter, sa=3.0) == model.min_p
 
 

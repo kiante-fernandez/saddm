@@ -111,8 +111,7 @@ def check_1_reference():
         (1.5, 0.5, 0.2, 0.3, 0.20, 0.15, 0.08, 0.1),
         (1.1, 0.5, 3.2, 0.22, 2.3, 1.0, 0.10, 0.0),
         (1.1, 0.5, 2.0, 0.22, 1.0, 0.5, 0.10, 0.2),
-        # a < sa < 2a: legal (a_i = a +- sa/2 stays positive) but used to be
-        # rejected outright by the Numba reference's old sa <= a bound.
+        # a < sa <= 2a: legal, but the reference's old sa <= a bound rejected it.
         (1.1, 0.5, 1.5, 0.25, 0.8, 1.6, 0.08, 0.0),
     ]:
         for rt in [t + 0.1, t + 0.35, t + 0.9]:
@@ -207,14 +206,12 @@ def check_sa_boundary():
     def logp(rt, resp, sa):
         return float(f_logp([rt], [float(resp)], a, z, v, t, 0.0, sa, 0.0, 0.0)[0])
 
-    # Mass is exactly 1 at sa = 2a; past it the a_grid floor used to eat it.
     mass = sum(quad(lambda rt: np.exp(logp(rt, resp, 2.0 * a)), t + 1e-6, t + 30,
                     limit=200)[0]
                for resp in (0, 1))
     rejected = np.isclose(logp(t + 0.2, 0, 2.01 * a), float(_LOG_TINY))
 
-    # The njit reference must draw the line in the same place (validate=False
-    # exercises the kernel's own check, not DDMModel's validator).
+    # validate=False exercises the njit kernel's own bound, not the validator.
     model = DDMModel(n_points=15)
     ref = (model.pdf(0.5, a, z, v, t, sa=1.99 * a, validate=False) > model.min_p
            and model.pdf(0.5, a, z, v, t, sa=2.01 * a, validate=False) == model.min_p)
