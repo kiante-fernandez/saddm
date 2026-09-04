@@ -7,37 +7,14 @@ numpyro.set_host_device_count(2)
 import arviz as az
 import hssm
 import matplotlib.pyplot as plt
-import pytensor.tensor as pt
 
 import os
-import sys
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
-from saddm.ddmsa import ddmsa_logp
+from _hssm import ddmsa_half_a
 
 OUT_DIR = os.environ.get("OUT_DIR", os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "results", "cavanagh"))
 PARAMS = ["v", "a", "z", "t", "sv", "sa", "st"]
-
-
-def logp_ddmsa(data, v, a, z, t, sv, sa, st):
-    # HSSM conventions -> saddm conventions: HSSM's a is the half boundary
-    # separation (saddm uses the full one), and t here is the LOWER EDGE of the
-    # uniform non-decision distribution (actual non-decision time = t + st/2).
-    # Sampling the edge decorrelates t from st; sampling them independently makes
-    # the posterior a ridge that NUTS cannot traverse.
-    data = pt.reshape(data, (-1, 2))
-    return ddmsa_logp(
-        pt.abs(data[:, 0]),
-        data[:, 1],
-        a=2.0 * a,
-        z=z,
-        v=v,
-        t=t + st / 2.0,
-        sv=sv,
-        sa=2.0 * sa,
-        st=st,
-    )
 
 
 cav = hssm.load_data("cavanagh_theta")
@@ -45,7 +22,7 @@ cav = hssm.load_data("cavanagh_theta")
 model = hssm.HSSM(
     data=cav,
     model="ddmsa",
-    loglik=logp_ddmsa,
+    loglik=ddmsa_half_a,
     loglik_kind="analytical",
     model_config={
         "response": ["rt", "response"],

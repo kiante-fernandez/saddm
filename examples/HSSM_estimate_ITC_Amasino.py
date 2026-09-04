@@ -28,12 +28,8 @@ numpyro.set_host_device_count(2)
 import arviz as az
 import hssm
 import pandas as pd
-import pytensor.tensor as pt
 
-import sys
-
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
-from saddm.ddmsa import ddmsa_logp
+from _hssm import ddm, ddmsa
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 SRC_CSV = os.path.join(ROOT, "data/itc_amasino/itc_amasino.csv")
@@ -65,17 +61,6 @@ else:
     REPORT = ["v_Intercept", "v_val", "v_tim", "a", "z", "t", "sv", "sa", "st"]
 
 
-def logp_ddmsa_itc(data, v, a, z, t, sv, sa, st):
-    data = pt.reshape(data, (-1, 2))
-    return ddmsa_logp(pt.abs(data[:, 0]), data[:, 1], a=a, z=z, v=v,
-                      t=t + st / 2.0, sv=sv, sa=sa, st=st)
-
-
-def logp_ddm_itc(data, v, a, z, t):
-    data = pt.reshape(data, (-1, 2))
-    return ddmsa_logp(pt.abs(data[:, 0]), data[:, 1], a=a, z=z, v=v, t=t)
-
-
 def fit_one(df, tag):
     """df columns: rt, response (+-1), val, tim. Returns one summary row."""
     min_rt = float(df.rt.min())
@@ -85,7 +70,7 @@ def fit_one(df, tag):
     model = hssm.HSSM(
         data=df,
         model="ddm_itc" if PLAIN else "ddmsa_itc",
-        loglik=logp_ddm_itc if PLAIN else logp_ddmsa_itc,
+        loglik=ddm if PLAIN else ddmsa,
         loglik_kind="analytical",
         model_config={
             "response": ["rt", "response"],

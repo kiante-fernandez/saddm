@@ -29,12 +29,8 @@ numpyro.set_host_device_count(2)
 import arviz as az
 import hssm
 import pandas as pd
-import pytensor.tensor as pt
 
-import sys
-
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
-from saddm.ddmsa import ddmsa_logp
+from _hssm import ddm, ddmsa, ddmsa_half_a
 
 VARIANT = os.environ.get("VARIANT", "cav_loglogit")
 OUT_DIR = os.environ.get("OUT_DIR", os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "results", "hier"))
@@ -44,23 +40,6 @@ DRAWS = int(os.environ.get("DRAWS", "1000"))
 TUNE = int(os.environ.get("TUNE", "1000"))
 TARGET_ACCEPT = float(os.environ.get("TARGET_ACCEPT", "0.8"))
 CHAINS = 2
-
-
-def logp_cav(data, v, a, z, t, sv, sa, st):
-    data = pt.reshape(data, (-1, 2))
-    return ddmsa_logp(pt.abs(data[:, 0]), data[:, 1], a=2.0 * a, z=z, v=v,
-                      t=t + st / 2.0, sv=sv, sa=2.0 * sa, st=st)
-
-
-def logp_itc_plain(data, v, a, z, t):
-    data = pt.reshape(data, (-1, 2))
-    return ddmsa_logp(pt.abs(data[:, 0]), data[:, 1], a=a, z=z, v=v, t=t)
-
-
-def logp_itc_sa(data, v, a, z, t, sv, sa, st):
-    data = pt.reshape(data, (-1, 2))
-    return ddmsa_logp(pt.abs(data[:, 0]), data[:, 1], a=a, z=z, v=v,
-                      t=t + st / 2.0, sv=sv, sa=sa, st=st)
 
 
 def build():
@@ -86,7 +65,7 @@ def build():
             ]
             link = None
         return hssm.HSSM(
-            data=cav, model="ddmsa", loglik=logp_cav, loglik_kind="analytical",
+            data=cav, model="ddmsa", loglik=ddmsa_half_a, loglik_kind="analytical",
             model_config={"response": ["rt", "response"], "list_params": params,
                           "choices": (-1, 1), "bounds": bounds},
             p_outlier=0.05, include=include, link_settings=link,
@@ -120,7 +99,7 @@ def build():
     ]
     return hssm.HSSM(
         data=df, model="ddm_itc",
-        loglik=logp_itc_sa if VARIANT == "itc_hier_sa" else logp_itc_plain,
+        loglik=ddmsa if VARIANT == "itc_hier_sa" else ddm,
         loglik_kind="analytical",
         model_config={"response": ["rt", "response"], "list_params": params,
                       "choices": (-1, 1), "bounds": bounds},
