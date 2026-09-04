@@ -2,10 +2,10 @@
 
 | script | what it does |
 |---|---|
-| `estimate_HSSM_saddm.py` | Flat DDM-SA on `cavanagh_theta` (ships with HSSM) — the minimal adapter for registering `ddmsa_logp` as a custom analytical likelihood. Trace figure to `OUT_DIR` (default `results/cavanagh`). |
+| `estimate_HSSM_saddm.py` | Flat DDM-SA on `cavanagh_theta` (bundled with HSSM) — the minimal adapter for registering `ddmsa_logp` as a custom analytical likelihood. Trace figure to `OUT_DIR` (default `results/cavanagh`). |
 | `HSSM_estimate_ITC_Amasino.py` | Per-subject fits (212 subjects; `PLAIN=1` for the plain-DDM benchmark spec) and the population k-sweep on the exact permutation files the Fortran campaign used. `STAGE`, `SHARD`/`N_SHARDS`, `OUT_DIR` (default `results/itc_amasino`). |
 | `HSSM_hierarchical.py` | Hierarchical variants (`VARIANT`): cavanagh DDM-SA with participant random effects; ITC plain and full-SA hierarchies. `DRAWS`/`TUNE`/`TARGET_ACCEPT`, `OUT_DIR` (default `results/hier`). |
-| `hierarchical_figure.py` | Participant random-effect intervals from a hierarchical summary CSV (`SUMMARY`, default the shipped `cav_loglogit` run). |
+| `hierarchical_figure.py` | Participant random-effect intervals from a hierarchical summary CSV (`SUMMARY`, default the `cav_loglogit` run in `results/reference/hierarchical`). |
 
 ## Conventions the adapters encode
 

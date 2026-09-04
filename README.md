@@ -13,7 +13,7 @@ The likelihood is analytic (Navarro–Fuss density; drift variability integrated
 in closed form, uniform variability by Gauss–Legendre quadrature), so NUTS gets
 exact gradients. It is validated against the Fortran implementation the model
 was originally developed in; the Fortran programs, the data, and reference
-results ship in this repository so every validation is reproducible from a
+results are in this repository so every validation is reproducible from a
 clone.
 
 ## Install

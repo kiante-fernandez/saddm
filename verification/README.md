@@ -7,9 +7,9 @@
 | `compare_to_fortran.py` | Per-subject scatter (v0, v_val, v_time, a, t0, z) and k-sweep curves (those plus sv, sa, st) against the Fortran benchmark in `data/itc_amasino/`. |
 | `likelihood_figure.py` | Analytic density against a 200k-trial Euler–Maruyama simulation that shares no code with the likelihood. |
 
-The analysis scripts read the shipped reference results
-(`results/reference/`) by default and regenerate the published figures and
-numbers exactly; point `RESULTS` at a fresh run to analyze a reproduction.
+The analysis scripts read `results/reference/` by default and regenerate the
+published figures and numbers exactly; point `RESULTS` at a fresh run to
+analyze a reproduction.
 They write to `results/figures/` (gitignored) unless `OUT` says otherwise, so
 a default run never touches the tracked reference figures.
 
@@ -28,7 +28,7 @@ a default run never touches the tracked reference figures.
 - The Fortran programs report the start point mirrored (`z_fortran = 1 − z`);
   `compare_to_fortran.py` flips it before comparing.
 
-## Headline results (shipped in `results/reference/`)
+## Results
 
 Recovery over 100 datasets (500 trials each): a/z/v/t at r = 0.93–0.98 with
 near-nominal coverage; sv/sa/st at r = 0.65–0.71, with non-convergence
