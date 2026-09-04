@@ -35,7 +35,7 @@ model = hssm.HSSM(
             "t": (0.0, float(cav.rt.min())),
             "sv": (0.0, 3.0),
             "sa": (0.0, 1.0),
-            "st": (0.0, 0.6),
+            "st": (0.0, 2.0),
         },
     },
     p_outlier=0.05,
