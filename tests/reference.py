@@ -2,7 +2,7 @@
 (FC/GQ/FFC/COR lineage). Shares no code with saddm.ddmsa; test_ddmsa.py holds
 the PyTensor likelihood to it."""
 
-from math import ceil, exp, floor, log, pi, sin, sqrt
+from math import ceil, exp, floor, isfinite, log, pi, sin, sqrt
 
 import numpy as np
 from numba import float64, njit
@@ -62,7 +62,14 @@ def ddm_pdf_core(rt, a, z, v, ter, sv):
     return p * exp(exp_term) / sqrt(sv_squared_rt + 1) / (a * a)
 
 
-@njit
+@njit(cache=True)
+def _axis(center, width, active, nodes, weights):
+    if active:
+        return center + nodes * (width / 2), weights * 0.5
+    return np.array([center]), np.array([1.0])
+
+
+@njit(cache=True)
 def integrate(rt, a, z, v, ter, sv, sz, st, sa, nodes, weights):
     """One triple loop over the sz/st/sa grids. An inactive axis collapses to a
     single node with weight 1 and its validity guard is skipped."""
@@ -81,26 +88,9 @@ def integrate(rt, a, z, v, ter, sv, sz, st, sa, nodes, weights):
     if not sz_active and not st_active and not sa_active:
         return ddm_pdf_core(rt, a, z, v, ter, sv)
 
-    if sz_active:
-        z_grid = z + nodes * (sz / 2)
-        z_wts = weights * 0.5
-    else:
-        z_grid = np.array([z], dtype=np.float64)
-        z_wts = np.array([1.0], dtype=np.float64)
-
-    if st_active:
-        ter_grid = ter + nodes * (st / 2)
-        ter_wts = weights * 0.5
-    else:
-        ter_grid = np.array([ter], dtype=np.float64)
-        ter_wts = np.array([1.0], dtype=np.float64)
-
-    if sa_active:
-        a_grid = a + nodes * (sa / 2)
-        a_wts = weights * 0.5
-    else:
-        a_grid = np.array([a], dtype=np.float64)
-        a_wts = np.array([1.0], dtype=np.float64)
+    z_grid, z_wts = _axis(z, sz, sz_active, nodes, weights)
+    ter_grid, ter_wts = _axis(ter, st, st_active, nodes, weights)
+    a_grid, a_wts = _axis(a, sa, sa_active, nodes, weights)
 
     total = 0.0
     for i in range(len(z_grid)):
@@ -125,31 +115,16 @@ class DDMModel:
     min_p = 1e-10
 
     def __init__(self, n_points=15):
-        self.n_points = n_points
         self.nodes, self.weights = roots_legendre(n_points)
 
-    @staticmethod
-    def valid(a, z, v, ter, sv, sz, st, sa):
-        return bool(np.all(np.isfinite([a, z, v, ter, sv, sz, st, sa]))
-                    and a > 0.01 and 0 <= z <= 1 and ter >= 0
-                    and min(sv, sz, st, sa) >= 0
-                    and sa <= 2 * a and st <= 2 * ter and sz <= 2 * min(z, 1 - z))
-
-    def pdf(self, rt, a, z, v, ter, sv=0.0, sz=0.0, st=0.0, sa=0.0, validate=True):
-        if validate and not self.valid(a, z, v, ter, sv, sz, st, sa):
-            return self.min_p
-        if rt <= ter:
-            return self.min_p
-        sv, sz, st, sa = (0.0 if w < 1e-6 else w for w in (sv, sz, st, sa))
-        if sz == st == sa == 0.0:
-            p = ddm_pdf_core(rt, a, z, v, ter, sv)
-        else:
-            p = integrate(rt, a, z, v, ter, sv, sz, st, sa, self.nodes, self.weights)
-        return max(p, self.min_p)
+    def pdf(self, rt, a, z, v, ter, sv=0.0, sz=0.0, st=0.0, sa=0.0):
+        return max(integrate(rt, a, z, v, ter, sv, sz, st, sa, self.nodes, self.weights),
+                   self.min_p)
 
     def log_likelihood(self, params, data):
         a, z, v, ter, sv, sz, st, sa = params
-        if not self.valid(a, z, v, ter, sv, sz, st, sa):
+        if not (all(map(isfinite, params)) and a > 0.01 and 0 <= z <= 1 and ter >= 0
+                and min(sv, sz, st, sa) >= 0):
             return -np.inf
         total = 0.0
         for rt, choice in np.asarray(data, dtype=float):

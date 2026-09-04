@@ -10,7 +10,6 @@ Usage:
     python parameter_recovery.py --smoke-test   # Quick test with 1 config
 """
 
-import sys
 import os
 import time
 import argparse
@@ -23,10 +22,7 @@ numpyro.set_host_device_count(2)
 import numpy as np
 import arviz as az
 
-# Add project root to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-
-from saddm.ddmsa import make_ddmsa_model, sample_ddmsa, sample_ddmsa_exact
+from saddm import make_ddmsa_model, sample_ddmsa, sample_ddmsa_exact
 
 # =====================================================================
 # Configuration

@@ -12,7 +12,7 @@
 - **Every script uses `saddm`'s full units.** HSSM's built-in DDM takes `a` as
   the half separation, so a fitted `a` here is twice what HSSM's own `ddm`
   reports on the same data, and the bounds are set accordingly.
-- **One adapter, the six-line `ddmsa` in each script, serves every model.** A
+- **One adapter, the `ddmsa` in each script, serves every model.** A
   plain DDM is the same adapter with `sv=0.0, sa=0.0, st=0.0` passed to
   `hssm.HSSM`; the likelihood collapses fixed zero widths to a single
   quadrature node.

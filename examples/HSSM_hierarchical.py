@@ -41,6 +41,7 @@ DRAWS = int(os.environ.get("DRAWS", "1000"))
 TUNE = int(os.environ.get("TUNE", "1000"))
 TARGET_ACCEPT = float(os.environ.get("TARGET_ACCEPT", "0.8"))
 CHAINS = 2
+PARAMS = ["v", "a", "z", "t", "sv", "sa", "st"]
 
 
 def ddmsa(data, v, a, z, t, sv, sa, st):
@@ -54,7 +55,6 @@ def ddmsa(data, v, a, z, t, sv, sa, st):
 def build():
     if VARIANT.startswith("cav"):
         cav = hssm.load_data("cavanagh_theta")
-        params = ["v", "a", "z", "t", "sv", "sa", "st"]
         min_rt = float(cav.rt.min())
         bounds = {"v": (-10.0, 10.0), "a": (0.6, 6.0), "z": (0.05, 0.95),
                   "sv": (0.0, 3.0), "sa": (0.0, 2.0), "st": (0.0, 2.0)}
@@ -75,7 +75,7 @@ def build():
             link = None
         return hssm.HSSM(
             data=cav, model="ddmsa", loglik=ddmsa, loglik_kind="analytical",
-            model_config={"response": ["rt", "response"], "list_params": params,
+            model_config={"response": ["rt", "response"], "list_params": PARAMS,
                           "choices": (-1, 1), "bounds": bounds},
             p_outlier=0.05, include=include, link_settings=link,
         )
@@ -90,10 +90,9 @@ def build():
         "tim": d.time_diff_days.values.astype(float),
         "subj": d.subj_ident.values,
     })
-    params = ["v", "a", "z", "t", "sv", "sa", "st"]
     bounds = {"v": (-10.0, 10.0), "a": (0.3, 6.0), "z": (0.05, 0.95),
               "t": (0.0, 1.6), "sv": (0.0, 2.0), "sa": (0.0, 3.0), "st": (0.0, 2.0)}
-    fixed = {} if VARIANT == "itc_hier_sa" else dict(sv=0.0, sa=0.0, st=0.0)
+    fixed = dict(sv=0.0, sa=0.0, st=0.0) if VARIANT == "itc_hier" else {}
     include = [
         {"name": "v", "formula": "v ~ 1 + val + tim + (1|subj)", "link": "identity",
          "prior": {"Intercept": {"name": "Normal", "mu": 0.0, "sigma": 2.0},
@@ -105,7 +104,7 @@ def build():
     return hssm.HSSM(
         data=df, model="ddm_itc",
         loglik=ddmsa, loglik_kind="analytical",
-        model_config={"response": ["rt", "response"], "list_params": params,
+        model_config={"response": ["rt", "response"], "list_params": PARAMS,
                       "choices": (-1, 1), "bounds": bounds},
         p_outlier=0.05, include=include, link_settings="log_logit", **fixed,
     )

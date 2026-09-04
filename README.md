@@ -29,7 +29,7 @@ pip install "saddm[hssm]"       # + hssm
 From a clone, for development or to run the verification and examples:
 
 ```bash
-pip install -e ".[test]"        # + pytest, numba (reference backend)
+pip install -e ".[test]"        # + pytest, numba
 pip install -e ".[hssm]"        # everything the examples need
 ```
 

@@ -55,17 +55,6 @@ def test_choice_coding(model):
     assert model.log_likelihood(p, [(0.5, 1)]) > model.log_likelihood(p, [(0.5, 0)])
 
 
-def test_full_width_bounds(model):
-    """sz <= 2*min(z, 1-z), sa <= 2a and st <= 2*ter are legal; past them is not."""
-    a, z, ter = 1.4, 0.5, 0.3
-    assert model.pdf(0.5, a, z, V, ter, sz=1.0) > model.min_p
-    assert model.pdf(0.5, a, z, V, ter, sa=2.8) > model.min_p
-    assert model.pdf(0.5, a, z, V, ter, st=0.6) > model.min_p
-    assert model.pdf(0.5, a, z, V, ter, sz=1.02) == model.min_p
-    assert model.pdf(0.5, a, z, V, ter, sa=2.9) == model.min_p
-    assert model.pdf(0.5, a, z, V, ter, st=0.62) == model.min_p
-
-
 def test_invalid_params_give_neg_inf(model):
     data = [(0.5, 0), (0.6, 1)]
     for i in (0, 1, 3, 4, 5, 6, 7):

@@ -56,7 +56,8 @@ DRAWS, TUNE, CHAINS = 1000, 1000, 2
 SUFFIX = "_plain" if PLAIN else ""
 PARAMS = ["v", "a", "z", "t", "sv", "sa", "st"]
 FIXED = dict(sv=0.0, sa=0.0, st=0.0) if PLAIN else {}
-REPORT = ["v_Intercept", "v_val", "v_tim", "a", "z", "t"] + ([] if PLAIN else ["sv", "sa", "st"])
+REPORT = [p for p in ["v_Intercept", "v_val", "v_tim", "a", "z", "t", "sv", "sa", "st"]
+          if p not in FIXED]
 
 
 def ddmsa(data, v, a, z, t, sv, sa, st):
@@ -80,7 +81,7 @@ def fit_one(df, tag):
         loglik_kind="analytical",
         model_config={
             "response": ["rt", "response"],
-            "list_params": list(PARAMS),
+            "list_params": PARAMS,
             "choices": (-1, 1),
             "bounds": bounds,
         },
@@ -107,7 +108,7 @@ def fit_one(df, tag):
     for p in REPORT:
         row[p] = float(s.loc[p, "mean"])
         row[p + "_sd"] = float(s.loc[p, "sd"])
-    row["t0"] = row["t"] if PLAIN else row["t"] + row["st"] / 2.0
+    row["t0"] = row["t"] + row.get("st", 0.0) / 2.0
     return row
 
 
