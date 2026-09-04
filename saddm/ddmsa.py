@@ -14,7 +14,7 @@ Per trial, with diffusion coefficient s = 1:
 
 sa, st and sz are full widths, matching simulate_ddmsa. The drift integral is
 analytic (Ratcliff's Gaussian-mixture form); the uniform integrals use
-Gauss-Legendre quadrature, exact to ~1e-8 at the default 7 nodes.
+Gauss-Legendre quadrature, accurate to ~1e-6 at the default 7 nodes.
 
 There is no lapse (contaminant) mixture here: HSSM adds its own p_outlier
 mixture on top of any analytical likelihood, and in plain PyMC a lapse model is

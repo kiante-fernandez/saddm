@@ -143,16 +143,14 @@ class TestChoiceCoding:
     """Test that choice coding works correctly for likelihood."""
 
     def test_symmetric_start_equal_drift(self, model):
-        """With z=0.5 and v=0, both choices should have equal likelihood."""
-        data = [(0.5, 0), (0.5, 1)]
-        params = [1.2, 0.5, 0.0, 0.3, 0.0, 0.0, 0.0, 0.0]
+        """choice=1 with (z, v) must equal choice=0 with (1-z, -v)."""
+        rt, a, ter = 0.5, 1.2, 0.3
+        z, v = 0.3, 0.4
 
-        ll = model.log_likelihood(params, data)
-        assert np.isfinite(ll)
-
-        p_lower = model.pdf(0.5, 1.2, 0.5, 0.0, 0.3)
-        p_upper = model.pdf(0.5, 1.2, 0.5, 0.0, 0.3)
-        assert abs(p_lower - p_upper) < 1e-10
+        ll_upper = model.log_likelihood([a, z, v, ter, 0, 0, 0, 0], [(rt, 1)])
+        ll_lower_of_flip = model.log_likelihood([a, 1 - z, -v, ter, 0, 0, 0, 0], [(rt, 0)])
+        assert np.isfinite(ll_upper)
+        assert abs(ll_upper - ll_lower_of_flip) < 1e-10
 
     def test_drift_favors_one_boundary(self, model):
         """Positive drift makes the upper response (choice 1) more likely."""

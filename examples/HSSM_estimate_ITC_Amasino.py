@@ -106,7 +106,7 @@ def fit_one(df, tag):
     )
     t0 = time.time()
     idata = model.sample(sampler="numpyro", draws=DRAWS, tune=TUNE,
-                         chains=CHAINS, progressbar=False)
+                         chains=CHAINS, progressbar=False, random_seed=20240101)
     s = az.summary(idata, var_names=list(REPORT))
     row = {"tag": tag, "n_trials": len(df), "sec": round(time.time() - t0),
            "div": int(idata.sample_stats.diverging.values.sum()),

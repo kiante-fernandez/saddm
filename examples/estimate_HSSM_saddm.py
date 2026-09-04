@@ -64,7 +64,7 @@ model = hssm.HSSM(
     p_outlier=0.05,
 )
 
-idata = model.sample(sampler="numpyro", draws=1000, tune=1000, chains=2)
+idata = model.sample(sampler="numpyro", draws=1000, tune=1000, chains=2, random_seed=20240101)
 
 print(az.summary(idata, var_names=list(PARAMS)))
 print("divergences:", int(idata.sample_stats.diverging.values.sum()))
