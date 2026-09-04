@@ -5,14 +5,10 @@ Generates 100 parameter configurations via Latin Hypercube Sampling,
 simulates 500 trials per configuration, fits each with PyMC (NUTS),
 and evaluates recovery quality.
 
-Usage:
-    python parameter_recovery.py                # Full recovery study
-    python parameter_recovery.py --smoke-test   # Quick test with 1 config
 """
 
 import os
 import time
-import argparse
 import warnings
 
 import numpyro
@@ -167,24 +163,15 @@ def fit_and_extract(cfg, n_trials=N_TRIALS):
 # Recovery Study with Checkpointing
 # =====================================================================
 
-def run_recovery_study(smoke_test=False):
+def run_recovery_study():
     """Run the full parameter recovery study with CSV checkpointing."""
     import pandas as pd
 
     os.makedirs(RESULTS_DIR, exist_ok=True)
 
-    n_trials = 100 if smoke_test else N_TRIALS
-
-    global N_DRAWS, N_TUNE
-    if smoke_test:
-        N_DRAWS = 200
-        N_TUNE = 500
-
     configs = generate_parameter_grid(n=N_CONFIGS, seed=2024)
     if SHARD >= 0:
         configs = [c for c in configs if c['config_id'] % N_SHARDS == SHARD]
-    if smoke_test:
-        configs = configs[:1]
 
     completed_ids = set()
     if os.path.exists(RESULTS_CSV):
@@ -205,7 +192,7 @@ def run_recovery_study(smoke_test=False):
 
         t0 = time.time()
         try:
-            result = fit_and_extract(cfg, n_trials=n_trials)
+            result = fit_and_extract(cfg)
             elapsed = time.time() - t0
             result['elapsed_seconds'] = elapsed
 
@@ -239,9 +226,4 @@ def run_recovery_study(smoke_test=False):
 # =====================================================================
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='DDM-SA Parameter Recovery (NUTS)')
-    parser.add_argument('--smoke-test', action='store_true',
-                        help='Quick test with 1 config, fewer draws')
-    args = parser.parse_args()
-
-    run_recovery_study(smoke_test=args.smoke_test)
+    run_recovery_study()
