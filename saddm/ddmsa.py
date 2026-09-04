@@ -14,7 +14,7 @@ Per trial, with diffusion coefficient s = 1:
 
 sa, st and sz are full widths, matching simulate_ddmsa. The drift integral is
 analytic (Ratcliff's Gaussian-mixture form); the uniform integrals use
-Gauss-Legendre quadrature, exact to ~1e-8 at the default 7 nodes.
+Gauss-Legendre quadrature, accurate to ~1e-6 at the default 7 nodes.
 
 There is no lapse (contaminant) mixture here: HSSM adds its own p_outlier
 mixture on top of any analytical likelihood, and in plain PyMC a lapse model is
@@ -190,7 +190,8 @@ def ddmsa_logp(rt, response, a, z, v, t,
     result = pt.logsumexp((log_pdf + log_w).reshape((rt.shape[0], -1)), axis=-1)
     sa_valid = pt.le(sa_w, 2.0 * a_v)
     sz_valid = pt.le(sz_w, 2.0 * pt.minimum(z_v, 1.0 - z_v))
-    return pt.switch(pt.and_(sa_valid, sz_valid), result, _LOG_TINY)
+    st_valid = pt.le(st_w, 2.0 * t_v)
+    return pt.switch(pt.and_(pt.and_(sa_valid, sz_valid), st_valid), result, _LOG_TINY)
 
 
 def ddmsa_potential(data, **kwargs):

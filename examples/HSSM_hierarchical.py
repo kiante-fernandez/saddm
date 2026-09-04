@@ -135,7 +135,7 @@ print("logp at init:", float(model.pymc_model.compile_logp()(ip)), flush=True)
 
 t0 = time.time()
 idata = model.sample(sampler="numpyro", draws=DRAWS, tune=TUNE, chains=CHAINS,
-                     target_accept=TARGET_ACCEPT, progressbar=False)
+                     target_accept=TARGET_ACCEPT, progressbar=False, random_seed=20240101)
 elapsed = time.time() - t0
 idata.to_netcdf(os.path.join(OUT_DIR, f"{VARIANT}_idata.nc"))
 

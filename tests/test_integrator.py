@@ -85,12 +85,13 @@ def test_integrator_combined_variability(integrator):
     assert all(p > 0 and np.isfinite(p) for p in [base, sz_only, st_only, sa_only, all_var])
 
 def test_integrator_extreme_cases(integrator):
-    """Test that very small variability matches no-variability case."""
+    """Variability just above the eps=1e-6 activation threshold matches the
+    no-variability case."""
     rt, a, z, v, ter, sv = 0.5, 1.2, 0.5, 0.3, 0.3, 0.15
     args = _quad_args(integrator)
 
     no_var = integrator.integrate(rt, a, z, v, ter, sv, 0.0, 0.0, 0.0, *args)
-    tiny_var = integrator.integrate(rt, a, z, v, ter, sv, 1e-10, 1e-10, 1e-10, *args)
+    tiny_var = integrator.integrate(rt, a, z, v, ter, sv, 2e-6, 2e-6, 2e-6, *args)
 
     assert abs(tiny_var - no_var) / max(abs(no_var), 1e-10) < 1e-2
 
