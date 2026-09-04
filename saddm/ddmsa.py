@@ -16,10 +16,6 @@ sa, st and sz are full widths, matching simulate_ddmsa. The drift integral is
 analytic (Ratcliff's Gaussian-mixture form); the uniform integrals use
 Gauss-Legendre quadrature, accurate to ~1e-6 at the default 7 nodes.
 
-There is no lapse (contaminant) mixture here: HSSM adds its own p_outlier
-mixture on top of any analytical likelihood, and in plain PyMC a lapse model is
-one pm.logaddexp away from ddmsa_logp.
-
 Ratcliff's s = 0.1 convention (used by fortran/fit_sa_simplex.f90) converts to
 this module by multiplying a, v, sv (eta) and sa by 10 and leaving t, st and
 relative z alone: Fortran a=0.11, v=0.01..0.32, eta=0.23, sa=0.10 becomes
