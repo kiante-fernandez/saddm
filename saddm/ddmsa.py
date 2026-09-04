@@ -137,7 +137,8 @@ def ddmsa_logp(rt, response, a, z, v, t,
 
     Returns:
         (N,) tensor of log-densities; -1e3 where rt is below every possible
-        non-decision time.
+        non-decision time or a width exceeds its support (sa <= 2a,
+        st <= 2t, sz <= 2 min(z, 1 - z)).
     """
     rt = pt.as_tensor_variable(rt).astype("float64")
     response = pt.as_tensor_variable(response).astype("float64")
@@ -365,9 +366,8 @@ def make_ddmsa_model(data, sz=False, n_quad=N_QUAD, constrained=True,
         data: (N, 2) array with columns [rt in seconds, response 0/1].
         sz: include across-trial start-point variability.
         n_quad: Gauss-Legendre nodes per variability dimension.
-        constrained: sample sa as a fraction of a, so a - sa/2 stays positive by
-            construction and the likelihood's clipping guard never binds. Set False
-            to sample the width directly.
+        constrained: sample sa as a fraction of a, so it stays inside its
+            support by construction. Set False to sample the width directly.
         use_potential: attach the likelihood with pm.Potential instead of the
             CustomDist; cheaper, but gives up per-trial log-likelihoods.
 
