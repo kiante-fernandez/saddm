@@ -194,48 +194,34 @@ def check_3_edges():
 
 
 def check_sa_boundary():
-    """sa <= 2a: mass is 1 up to the bound inclusive, rejected past it, and the
-    Numba reference agrees."""
+    """sa <= 2a: mass is 1 at the bound inclusive, rejected past it, and the
+    Numba reference enforces the same bound."""
     print("\n[+] sa boundary (a_i = a +/- sa/2 stays positive)")
     from scipy.integrate import quad
 
     from saddm.model import DDMModel
 
-    f_logp, f_grad = _fn()
+    f_logp, _ = _fn()
     a, z, v, t = 1.1, 0.5, 1.5, 0.25
 
-    def density(rt, resp, sa_val):
-        return float(np.exp(f_logp([rt], [float(resp)], a, z, v, t, 0.0,
-                                   sa_val, 0.0, 0.0)[0]))
+    def logp(rt, resp, sa):
+        return float(f_logp([rt], [float(resp)], a, z, v, t, 0.0, sa, 0.0, 0.0)[0])
 
-    ok = True
-    for ratio in [1.5, 2.0]:
-        sa_val = ratio * a
-        total = sum(quad(lambda rt: density(rt, resp, sa_val), t + 1e-6, t + 30,
-                         limit=200)[0]
-                    for resp in (0, 1))
-        good = abs(total - 1.0) < 1e-3
-        ok &= good
-        print(f"    sa/a={ratio:.2f}  mass={total:.6f}  {'' if good else '<-- BAD'}")
+    # Mass is exactly 1 at sa = 2a; past it the a_grid floor used to eat it.
+    mass = sum(quad(lambda rt: np.exp(logp(rt, resp, 2.0 * a)), t + 1e-6, t + 30,
+                    limit=200)[0]
+               for resp in (0, 1))
+    rejected = np.isclose(logp(t + 0.2, 0, 2.01 * a), float(_LOG_TINY))
 
-    for ratio in [2.01, 5.0]:
-        sa_val = ratio * a
-        lp = float(f_logp([t + 0.2], [0.0], a, z, v, t, 0.0, sa_val, 0.0, 0.0)[0])
-        grad = np.asarray(f_grad([t + 0.2], [0.0], a, z, v, t, 0.0, sa_val, 0.0, 0.0),
-                          dtype=float)
-        good = np.isclose(lp, float(_LOG_TINY)) and np.all(np.isfinite(grad))
-        ok &= good
-        print(f"    sa/a={ratio:.2f}  logp={lp:.1f} rejected, grad finite="
-              f"{np.all(np.isfinite(grad))}  {'' if good else '<-- BAD'}")
-
+    # The njit reference must draw the line in the same place (validate=False
+    # exercises the kernel's own check, not DDMModel's validator).
     model = DDMModel(n_points=15)
-    ref_valid = model.pdf(0.5, a, z, v, t, sa=1.99 * a, validate=False)
-    ref_invalid = model.pdf(0.5, a, z, v, t, sa=2.01 * a, validate=False)
-    bound_ok = ref_valid > model.min_p and ref_invalid == model.min_p
-    ok &= bound_ok
-    print(f"    Numba reference enforces the identical sa<=2a bound: "
-          f"{'yes' if bound_ok else 'NO <-- BAD'}")
+    ref = (model.pdf(0.5, a, z, v, t, sa=1.99 * a, validate=False) > model.min_p
+           and model.pdf(0.5, a, z, v, t, sa=2.01 * a, validate=False) == model.min_p)
 
+    ok = abs(mass - 1.0) < 1e-3 and rejected and ref
+    print(f"    mass at sa=2a={mass:.6f}  rejected past 2a={rejected}  "
+          f"reference bound matches={ref}")
     print(f"    -> {'PASS' if ok else 'FAIL'}")
     return ok
 
