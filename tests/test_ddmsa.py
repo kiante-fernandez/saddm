@@ -87,8 +87,7 @@ def check_0_scale():
 def check_1_reference():
     """New density vs the Numba core PDF and quadrature integrator."""
     print("\n[1] vs Numba reference")
-    from saddm.core import ddm_pdf_core
-    from saddm.model import DDMModel
+    from reference import DDMModel, ddm_pdf_core
 
     f_logp, _ = _fn(n_quad=15)
     model = DDMModel(n_points=15)
@@ -199,7 +198,7 @@ def check_bounds():
     print("\n[+] support bounds")
     from scipy.integrate import quad
 
-    from saddm.model import DDMModel
+    from reference import DDMModel
 
     f_logp, _ = _fn()
     a, v, t = 1.1, 1.5, 0.25

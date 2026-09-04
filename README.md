@@ -56,8 +56,8 @@ likelihood; `examples/estimate_HSSM_saddm.py` is the minimal adapter.
 
 | path | contents |
 |---|---|
-| `saddm/` | `ddmsa.py`: the likelihood and PyMC glue. `core.py`/`integrator.py`/`model.py`: the Numba reference implementation (`reference` extra). |
-| `tests/` | `test_ddmsa.py`: verification suite — s = 1 closed forms, agreement with the Numba/Fortran reference, finite-difference gradients, corner finiteness, per-trial broadcasting, backend agreement, static-zero collapse (run directly with `--sample` for an end-to-end NUTS check). Remaining `test_*.py` cover the Numba reference. |
+| `saddm/` | `ddmsa.py`: the likelihood and PyMC glue. |
+| `tests/` | `test_ddmsa.py`: verification suite — s = 1 closed forms, agreement with the Numba/Fortran reference, finite-difference gradients, corner finiteness, per-trial broadcasting, backend agreement, static-zero collapse (run directly with `--sample` for an end-to-end NUTS check). `reference.py` is the Numba port of the Fortran density it is held to; `test_reference.py` covers that port. |
 | `verification/` | `parameter_recovery.py`: 100-config NUTS recovery study. `recovery_figure.py`, `compare_to_fortran.py`, `likelihood_figure.py`: analysis and figures (read `results/reference/` by default; set `RESULTS` for a fresh run). |
 | `examples/` | HSSM applications: flat fit on cavanagh_theta, the per-subject + k-sweep replication of the Fortran intertemporal-choice analysis, hierarchical variants, and the random-effects figure. |
 | `fortran/` | The Fortran programs that produced the benchmarks, with build notes. |

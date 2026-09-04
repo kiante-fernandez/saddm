@@ -7,7 +7,7 @@ is the source of a specific artifact shipped in this repo.
 |---|---|---|
 | `fit_ddm_itc.f90` | per-subject plain-DDM ITC fits (drift regression, ML via simplex) | `data/itc_amasino/benchmark_targets_amasino.csv` |
 | `fit_ddm_itc_sa.f90` | population DDM-SA fits on k trials per subject (the k-sweep) | `data/itc_amasino/fortran_ksweep_summary.csv` |
-| `fit_sa_simplex.f90` | the DDM-SA density routines (FC/GQ/FFC/COR lineage) | ported to `saddm/core.py` / `saddm/integrator.py`, which `tests/test_ddmsa.py` (check 1) holds the PyTensor likelihood to |
+| `fit_sa_simplex.f90` | the DDM-SA density routines (FC/GQ/FFC/COR lineage) | ported to `tests/reference.py`, which `tests/test_ddmsa.py` (check 1) holds the PyTensor likelihood to |
 
 Build (gfortran, OpenMP):
 
