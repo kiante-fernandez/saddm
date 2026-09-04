@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "saddm"
-version = "0.1.0"
+version = "0.1.1"
 description = "Drift diffusion model with across-trial variability in boundary separation (DDM-SA): differentiable PyTensor likelihood for PyMC and HSSM"
 readme = "README.md"
 license = { text = "MIT" }

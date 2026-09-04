@@ -10,7 +10,7 @@ The Numba reference implementation (saddm.core, saddm.integrator, saddm.model)
 needs the `reference` extra and is imported explicitly.
 """
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 
 from .ddmsa import (
     DDMSA,
