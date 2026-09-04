@@ -29,8 +29,9 @@ numpyro.set_host_device_count(2)
 import arviz as az
 import hssm
 import pandas as pd
+import pytensor.tensor as pt
 
-from _hssm import ddm, ddmsa, ddmsa_half_a
+from saddm import ddmsa_logp
 
 VARIANT = os.environ.get("VARIANT", "cav_loglogit")
 OUT_DIR = os.environ.get("OUT_DIR", os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "results", "hier"))
@@ -42,13 +43,21 @@ TARGET_ACCEPT = float(os.environ.get("TARGET_ACCEPT", "0.8"))
 CHAINS = 2
 
 
+def ddmsa(data, v, a, z, t, sv, sa, st):
+    """ddmsa_logp as an HSSM loglik. a and the widths are in saddm's full units;
+    t is the lower edge of the non-decision distribution, so t0 = t + st/2."""
+    data = pt.reshape(data, (-1, 2))
+    return ddmsa_logp(pt.abs(data[:, 0]), data[:, 1], a=a, z=z, v=v,
+                      t=t + st / 2.0, sv=sv, sa=sa, st=st)
+
+
 def build():
     if VARIANT.startswith("cav"):
         cav = hssm.load_data("cavanagh_theta")
         params = ["v", "a", "z", "t", "sv", "sa", "st"]
         min_rt = float(cav.rt.min())
-        bounds = {"v": (-10.0, 10.0), "a": (0.3, 3.0), "z": (0.05, 0.95),
-                  "sv": (0.0, 3.0), "sa": (0.0, 1.0), "st": (0.0, 0.6)}
+        bounds = {"v": (-10.0, 10.0), "a": (0.6, 6.0), "z": (0.05, 0.95),
+                  "sv": (0.0, 3.0), "sa": (0.0, 2.0), "st": (0.0, 2.0)}
         if VARIANT == "cav_loglogit":
             bounds["t"] = (0.0, 1.0)
             include = [
@@ -65,7 +74,7 @@ def build():
             ]
             link = None
         return hssm.HSSM(
-            data=cav, model="ddmsa", loglik=ddmsa_half_a, loglik_kind="analytical",
+            data=cav, model="ddmsa", loglik=ddmsa, loglik_kind="analytical",
             model_config={"response": ["rt", "response"], "list_params": params,
                           "choices": (-1, 1), "bounds": bounds},
             p_outlier=0.05, include=include, link_settings=link,
@@ -81,14 +90,10 @@ def build():
         "tim": d.time_diff_days.values.astype(float),
         "subj": d.subj_ident.values,
     })
-    if VARIANT == "itc_hier_sa":
-        params = ["v", "a", "z", "t", "sv", "sa", "st"]
-        bounds = {"v": (-10.0, 10.0), "a": (0.3, 6.0), "z": (0.05, 0.95),
-                  "t": (0.0, 1.6), "sv": (0.0, 2.0), "sa": (0.0, 3.0),
-                  "st": (0.0, 2.0)}
-    else:
-        params = ["v", "a", "z", "t"]
-        bounds = {"v": (-10.0, 10.0), "a": (0.3, 6.0), "z": (0.05, 0.95), "t": (0.0, 1.6)}
+    params = ["v", "a", "z", "t", "sv", "sa", "st"]
+    bounds = {"v": (-10.0, 10.0), "a": (0.3, 6.0), "z": (0.05, 0.95),
+              "t": (0.0, 1.6), "sv": (0.0, 2.0), "sa": (0.0, 3.0), "st": (0.0, 2.0)}
+    fixed = {} if VARIANT == "itc_hier_sa" else dict(sv=0.0, sa=0.0, st=0.0)
     include = [
         {"name": "v", "formula": "v ~ 1 + val + tim + (1|subj)", "link": "identity",
          "prior": {"Intercept": {"name": "Normal", "mu": 0.0, "sigma": 2.0},
@@ -99,11 +104,10 @@ def build():
     ]
     return hssm.HSSM(
         data=df, model="ddm_itc",
-        loglik=ddmsa if VARIANT == "itc_hier_sa" else ddm,
-        loglik_kind="analytical",
+        loglik=ddmsa, loglik_kind="analytical",
         model_config={"response": ["rt", "response"], "list_params": params,
                       "choices": (-1, 1), "bounds": bounds},
-        p_outlier=0.05, include=include, link_settings="log_logit",
+        p_outlier=0.05, include=include, link_settings="log_logit", **fixed,
     )
 
 
