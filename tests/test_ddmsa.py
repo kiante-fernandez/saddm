@@ -172,6 +172,8 @@ def check_3_edges():
         "st straddles min RT": dict(t=min_rt - 0.02, st=0.4),
         "sa exactly at 2a": dict(sa=TRUE["a"] * 2.0),
         "sa just above 2a (rejected)": dict(sa=TRUE["a"] * 2.01),
+        "sz at bound": dict(z=0.1, sz=0.2),
+        "sz just past bound (rejected)": dict(z=0.1, sz=0.202),
         "tiny a": dict(a=0.31),
         "huge a": dict(a=4.9),
         "z at the edge": dict(z=0.01, sz=0.0),
@@ -191,33 +193,38 @@ def check_3_edges():
     return ok
 
 
-def check_sa_boundary():
-    """sa <= 2a: mass is 1 at the bound inclusive, rejected past it, and the
-    Numba reference enforces the same bound."""
-    print("\n[+] sa boundary (a_i = a +/- sa/2 stays positive)")
+def check_bounds():
+    """sa <= 2a and sz <= 2*min(z, 1-z): mass is 1 at each bound inclusive,
+    rejected past it, and the Numba reference draws the same line."""
+    print("\n[+] support bounds")
     from scipy.integrate import quad
 
     from saddm.model import DDMModel
 
     f_logp, _ = _fn()
-    a, z, v, t = 1.1, 0.5, 1.5, 0.25
-
-    def logp(rt, resp, sa):
-        return float(f_logp([rt], [float(resp)], a, z, v, t, 0.0, sa, 0.0, 0.0)[0])
-
-    mass = sum(quad(lambda rt: np.exp(logp(rt, resp, 2.0 * a)), t + 1e-6, t + 30,
-                    limit=200)[0]
-               for resp in (0, 1))
-    rejected = np.isclose(logp(t + 0.2, 0, 2.01 * a), float(_LOG_TINY))
-
-    # validate=False exercises the njit kernel's own bound, not the validator.
+    a, v, t = 1.1, 1.5, 0.25
     model = DDMModel(n_points=15)
-    ref = (model.pdf(0.5, a, z, v, t, sa=1.99 * a, validate=False) > model.min_p
-           and model.pdf(0.5, a, z, v, t, sa=2.01 * a, validate=False) == model.min_p)
 
-    ok = abs(mass - 1.0) < 1e-3 and rejected and ref
-    print(f"    mass at sa=2a={mass:.6f}  rejected past 2a={rejected}  "
-          f"reference bound matches={ref}")
+    def logp(rt, resp, z, sa=0.0, sz=0.0):
+        return float(f_logp([rt], [float(resp)], a, z, v, t, 0.0, sa, 0.0, sz)[0])
+
+    def ref(z, **w):
+        return model.pdf(0.5, a, z, v, t, validate=False, **w) > model.min_p
+
+    ok = True
+    for name, z, bound in [("sa", 0.5, dict(sa=2.0 * a)), ("sz", 0.1, dict(sz=0.2))]:
+        inside = {k: 0.99 * w for k, w in bound.items()}
+        past = {k: 1.01 * w for k, w in bound.items()}
+        mass = sum(quad(lambda rt: np.exp(logp(rt, resp, z, **bound)), t + 1e-6, t + 30,
+                        limit=200)[0]
+                   for resp in (0, 1))
+        rejected = np.isclose(logp(t + 0.2, 0, z, **past), float(_LOG_TINY))
+        agrees = ref(z, **inside) and not ref(z, **past)
+        good = abs(mass - 1.0) < 1e-3 and rejected and agrees
+        ok &= good
+        print(f"    {name}: mass at bound={mass:.6f}  rejected past={rejected}  "
+              f"reference agrees={agrees}  {'' if good else '<-- BAD'}")
+
     print(f"    -> {'PASS' if ok else 'FAIL'}")
     return ok
 
@@ -401,8 +408,8 @@ def test_static_zero():
     assert check_static_zero()
 
 
-def test_sa_boundary():
-    assert check_sa_boundary()
+def test_bounds():
+    assert check_bounds()
 
 
 if __name__ == "__main__":
@@ -419,7 +426,7 @@ if __name__ == "__main__":
         "4 broadcasting": check_4_vector_params(),
         "5 backends": check_5_backends(),
         "static zero": check_static_zero(),
-        "sa boundary": check_sa_boundary(),
+        "bounds": check_bounds(),
     }
     if args.sample:
         results["6 NUTS"] = check_6_nuts(backend=args.backend)

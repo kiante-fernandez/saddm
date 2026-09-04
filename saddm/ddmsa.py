@@ -189,7 +189,8 @@ def ddmsa_logp(rt, response, a, z, v, t,
 
     result = pt.logsumexp((log_pdf + log_w).reshape((rt.shape[0], -1)), axis=-1)
     sa_valid = pt.le(sa_w, 2.0 * a_v)
-    return pt.switch(sa_valid, result, _LOG_TINY)
+    sz_valid = pt.le(sz_w, 2.0 * pt.minimum(z_v, 1.0 - z_v))
+    return pt.switch(pt.and_(sa_valid, sz_valid), result, _LOG_TINY)
 
 
 def ddmsa_potential(data, **kwargs):
