@@ -160,8 +160,9 @@ def test_model_full_width_conventions(model):
 
     assert model.pdf(rt, a, z, v, ter, sz=0.6) > model.min_p
     assert model.pdf(rt, a, z, v, ter, sa=0.9) > model.min_p
+    assert model.pdf(rt, a, z, v, ter, sa=2.5) > model.min_p
     assert model.pdf(rt, a, z, v, ter, sz=1.2) == model.min_p
-    assert model.pdf(rt, a, z, v, ter, sa=1.5) == model.min_p
+    assert model.pdf(rt, a, z, v, ter, sa=3.0) == model.min_p
 
 
 def test_model_log_likelihood_slow_task(model):

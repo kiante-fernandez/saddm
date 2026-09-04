@@ -24,8 +24,8 @@ import numpy as np
 import pytensor
 import pytensor.tensor as pt
 
-from saddm.ddmsa import (DDMSA, _is_static_zero, ddmsa_logp, sample_ddmsa_exact,
-                         simulate_ddmsa)
+from saddm.ddmsa import (DDMSA, _LOG_TINY, _is_static_zero, ddmsa_logp,
+                         sample_ddmsa_exact, simulate_ddmsa)
 
 PARAMS = ["a", "z", "v", "t", "sv", "sa", "st", "sz"]
 TRUE = dict(a=1.1, z=0.5, v=1.5, t=0.25, sv=0.8, sa=0.5, st=0.08, sz=0.1)
@@ -111,6 +111,7 @@ def check_1_reference():
         (1.5, 0.5, 0.2, 0.3, 0.20, 0.15, 0.08, 0.1),
         (1.1, 0.5, 3.2, 0.22, 2.3, 1.0, 0.10, 0.0),
         (1.1, 0.5, 2.0, 0.22, 1.0, 0.5, 0.10, 0.2),
+        (1.1, 0.5, 1.5, 0.25, 0.8, 1.6, 0.08, 0.0),
     ]:
         for rt in [t + 0.1, t + 0.35, t + 0.9]:
             ref = model.pdf(rt, a, z, v, t, sv=sv, sa=sa, st=st, sz=sz,
@@ -169,7 +170,8 @@ def check_3_edges():
         "t just below min RT": dict(t=min_rt - 1e-4),
         "t above min RT": dict(t=min_rt + 0.05),
         "st straddles min RT": dict(t=min_rt - 0.02, st=0.4),
-        "sa nearly equals a": dict(sa=TRUE["a"] * 0.999),
+        "sa exactly at 2a": dict(sa=TRUE["a"] * 2.0),
+        "sa just above 2a (rejected)": dict(sa=TRUE["a"] * 2.01),
         "tiny a": dict(a=0.31),
         "huge a": dict(a=4.9),
         "z at the edge": dict(z=0.01, sz=0.0),
@@ -185,6 +187,37 @@ def check_3_edges():
         ok &= good
         print(f"    {label:22s} logp={L:12.2f} grad finite={np.all(np.isfinite(G))} "
               f"{'' if good else '<-- BAD'}")
+    print(f"    -> {'PASS' if ok else 'FAIL'}")
+    return ok
+
+
+def check_sa_boundary():
+    """sa <= 2a: mass is 1 at the bound inclusive, rejected past it, and the
+    Numba reference enforces the same bound."""
+    print("\n[+] sa boundary (a_i = a +/- sa/2 stays positive)")
+    from scipy.integrate import quad
+
+    from saddm.model import DDMModel
+
+    f_logp, _ = _fn()
+    a, z, v, t = 1.1, 0.5, 1.5, 0.25
+
+    def logp(rt, resp, sa):
+        return float(f_logp([rt], [float(resp)], a, z, v, t, 0.0, sa, 0.0, 0.0)[0])
+
+    mass = sum(quad(lambda rt: np.exp(logp(rt, resp, 2.0 * a)), t + 1e-6, t + 30,
+                    limit=200)[0]
+               for resp in (0, 1))
+    rejected = np.isclose(logp(t + 0.2, 0, 2.01 * a), float(_LOG_TINY))
+
+    # validate=False exercises the njit kernel's own bound, not the validator.
+    model = DDMModel(n_points=15)
+    ref = (model.pdf(0.5, a, z, v, t, sa=1.99 * a, validate=False) > model.min_p
+           and model.pdf(0.5, a, z, v, t, sa=2.01 * a, validate=False) == model.min_p)
+
+    ok = abs(mass - 1.0) < 1e-3 and rejected and ref
+    print(f"    mass at sa=2a={mass:.6f}  rejected past 2a={rejected}  "
+          f"reference bound matches={ref}")
     print(f"    -> {'PASS' if ok else 'FAIL'}")
     return ok
 
@@ -368,6 +401,10 @@ def test_static_zero():
     assert check_static_zero()
 
 
+def test_sa_boundary():
+    assert check_sa_boundary()
+
+
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--sample", action="store_true", help="also run the NUTS check")
@@ -382,6 +419,7 @@ if __name__ == "__main__":
         "4 broadcasting": check_4_vector_params(),
         "5 backends": check_5_backends(),
         "static zero": check_static_zero(),
+        "sa boundary": check_sa_boundary(),
     }
     if args.sample:
         results["6 NUTS"] = check_6_nuts(backend=args.backend)

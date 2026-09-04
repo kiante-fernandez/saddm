@@ -187,7 +187,9 @@ def ddmsa_logp(rt, response, a, z, v, t,
              + pt.as_tensor_variable(log_wt)[None, None, :, None]
              + pt.as_tensor_variable(log_wz)[None, None, None, :])
 
-    return pt.logsumexp((log_pdf + log_w).reshape((rt.shape[0], -1)), axis=-1)
+    result = pt.logsumexp((log_pdf + log_w).reshape((rt.shape[0], -1)), axis=-1)
+    sa_valid = pt.le(sa_w, 2.0 * a_v)
+    return pt.switch(sa_valid, result, _LOG_TINY)
 
 
 def ddmsa_potential(data, **kwargs):
