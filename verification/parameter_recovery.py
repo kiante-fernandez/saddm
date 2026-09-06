@@ -15,14 +15,11 @@ import numpyro
 
 numpyro.set_host_device_count(2)
 
-import numpy as np
 import arviz as az
+import numpy as np
+import pymc as pm
 
-from saddm import make_ddmsa_model, sample_ddmsa, sample_ddmsa_exact
-
-# =====================================================================
-# Configuration
-# =====================================================================
+from saddm import make_ddmsa_model, sample_ddmsa_exact
 
 N_CONFIGS = 100
 N_TRIALS = 500
@@ -54,10 +51,6 @@ RESULTS_CSV = os.path.join(RESULTS_DIR, f'ddm_sa_recovery_nuts{_SUFFIX}.csv')
 FAILURES_LOG = os.path.join(RESULTS_DIR, f'failures{_SUFFIX}.log')
 
 
-# =====================================================================
-# Latin Hypercube Sampling
-# =====================================================================
-
 def generate_parameter_grid(n=N_CONFIGS, seed=2024):
     """Generate n parameter configurations using Latin Hypercube Sampling."""
     from scipy.stats.qmc import LatinHypercube
@@ -77,19 +70,6 @@ def generate_parameter_grid(n=N_CONFIGS, seed=2024):
     return configs
 
 
-# =====================================================================
-# PyMC Model
-# =====================================================================
-
-def build_model(data):
-    """Build the PyMC model. Thin wrapper over saddm.ddmsa.make_ddmsa_model."""
-    return make_ddmsa_model(data, use_potential=True)
-
-
-# =====================================================================
-# Fitting and Extraction
-# =====================================================================
-
 def fit_and_extract(cfg, n_trials=N_TRIALS):
     """Simulate data, fit model, and extract posterior summaries."""
     data = sample_ddmsa_exact(
@@ -106,20 +86,11 @@ def fit_and_extract(cfg, n_trials=N_TRIALS):
     print(f"  Simulated: {len(data)} trials, mean RT={mean_rt:.3f}s, "
           f"accuracy(upper)={accuracy:.2%}")
 
-    model = build_model(data)
-
-    with warnings.catch_warnings():
+    with make_ddmsa_model(data, use_potential=True), warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        trace = sample_ddmsa(
-            model,
-            backend=NUTS_BACKEND,
-            draws=N_DRAWS,
-            tune=N_TUNE,
-            chains=N_CHAINS,
-            target_accept=TARGET_ACCEPT,
-            progressbar=False,
-            random_seed=cfg['config_id'],
-        )
+        trace = pm.sample(nuts_sampler=NUTS_BACKEND, draws=N_DRAWS, tune=N_TUNE,
+                          chains=N_CHAINS, target_accept=TARGET_ACCEPT,
+                          progressbar=False, random_seed=cfg['config_id'])
 
     # Extract results
     result = {'config_id': cfg['config_id']}
@@ -146,11 +117,7 @@ def fit_and_extract(cfg, n_trials=N_TRIALS):
     for param in PARAM_NAMES:
         result[f'rhat_{param}'] = float(rhat[param].values)
 
-    # Check for divergences
-    if hasattr(trace, 'sample_stats') and 'diverging' in trace.sample_stats:
-        result['n_divergences'] = int(trace.sample_stats['diverging'].values.sum())
-    else:
-        result['n_divergences'] = 0
+    result['n_divergences'] = int(trace.sample_stats.diverging.values.sum())
 
     result['n_trials'] = len(data)
     result['mean_rt'] = mean_rt
@@ -158,10 +125,6 @@ def fit_and_extract(cfg, n_trials=N_TRIALS):
 
     return result
 
-
-# =====================================================================
-# Recovery Study with Checkpointing
-# =====================================================================
 
 def run_recovery_study():
     """Run the full parameter recovery study with CSV checkpointing."""
@@ -220,10 +183,6 @@ def run_recovery_study():
 
     print(f"\nResults saved to {RESULTS_CSV}")
 
-
-# =====================================================================
-# Entry Point
-# =====================================================================
 
 if __name__ == '__main__':
     run_recovery_study()

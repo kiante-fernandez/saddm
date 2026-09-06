@@ -19,13 +19,15 @@ Gauss-Legendre quadrature, accurate to ~1e-6 at the default 7 nodes.
 Ratcliff's s = 0.1 convention converts to this module by multiplying a, v, sv
 and sa by 10; t, st and relative z are unchanged.
 
-    from saddm.ddmsa import make_ddmsa_model, sample_ddmsa
+    from saddm.ddmsa import make_ddmsa_model
 
-    model = make_ddmsa_model(data)          # data: (N, 2) array of [rt, response]
-    idata = sample_ddmsa(model, backend="numpyro")
+    with make_ddmsa_model(data):            # data: (N, 2) array of [rt, response]
+        idata = pm.sample(nuts_sampler="numpyro")
 """
 
 from __future__ import annotations
+
+import functools
 
 import numpy as np
 import pytensor.tensor as pt
@@ -33,10 +35,10 @@ from scipy.special import roots_legendre
 
 __all__ = [
     "ddmsa_logp",
-    "ddmsa_potential",
+    "hssm_loglik",
+    "HSSM_PARAMS",
     "DDMSA",
     "make_ddmsa_model",
-    "sample_ddmsa",
     "sample_ddmsa_exact",
     "simulate_ddmsa",
 ]
@@ -189,31 +191,32 @@ def ddmsa_logp(rt, response, a, z, v, t,
     return pt.switch(pt.and_(pt.and_(sa_valid, sz_valid), st_valid), result, _LOG_TINY)
 
 
-def ddmsa_potential(data, **kwargs):
-    """Total log-likelihood for pm.Potential.
+HSSM_PARAMS = ["v", "a", "z", "t", "sv", "sa", "st"]
 
-    Args:
-        data: (N, 2) tensor or array with columns [rt, response].
-        **kwargs: passed to ddmsa_logp.
 
-    Returns:
-        Scalar tensor.
+def hssm_loglik(data, v, a, z, t, sv, sa, st):
+    """ddmsa_logp as an HSSM loglik_kind="analytical" likelihood.
+
+    Pass with model_config["list_params"] = HSSM_PARAMS. a and the widths are in
+    saddm's full units; t is the lower edge of the non-decision distribution, so
+    the actual t0 is t + st/2. Fix a width to 0.0 in hssm.HSSM for a plain DDM.
     """
-    data = pt.as_tensor_variable(data)
-    return pt.sum(ddmsa_logp(data[:, 0], data[:, 1], **kwargs))
+    data = pt.reshape(data, (-1, 2))
+    return ddmsa_logp(pt.abs(data[:, 0]), data[:, 1], a=a, z=z, v=v,
+                      t=t + st / 2.0, sv=sv, sa=sa, st=st)
 
 
 def simulate_ddmsa(a, z, v, t, sv=0.0, sa=0.0, st=0.0, sz=0.0,
-                   n_trials=500, dt=1e-4, max_time=10.0, rng=None, seed=None):
+                   n_trials=500, dt=1e-4, max_time=10.0, seed=None):
     """Vectorized Euler-Maruyama simulator for the DDM-SA at s = 1.
 
-    Widths sa, st and sz are full widths, matching ddmsa_logp.
+    Widths sa, st and sz are full widths, matching ddmsa_logp. seed is anything
+    np.random.default_rng accepts, including a Generator.
 
     Returns:
         (M, 2) array of [rt, response] with timed-out trials dropped.
     """
-    if rng is None:
-        rng = np.random.default_rng(seed)
+    rng = np.random.default_rng(seed)
     n = int(n_trials)
 
     v_i = rng.normal(v, sv, n) if sv > 0 else np.full(n, float(v))
@@ -247,26 +250,18 @@ def simulate_ddmsa(a, z, v, t, sv=0.0, sa=0.0, st=0.0, sz=0.0,
     return np.column_stack([t_i[ok] + decision_time[ok], response[ok].astype(float)])
 
 
-_ICDF_FN = None
-
-
+@functools.cache
 def _icdf_density_fn():
-    """Compile and cache a scalar-parameter density used by the exact sampler."""
-    global _ICDF_FN
-    if _ICDF_FN is None:
-        import pytensor
+    """Compile a scalar-parameter density for the exact sampler, once."""
+    import pytensor
 
-        rt = pt.dvector("rt")
-        ch = pt.dvector("ch")
-        names = ["a", "z", "v", "t", "sv", "sa", "st", "sz"]
-        ps = [pt.dscalar(n) for n in names]
-        _ICDF_FN = pytensor.function(
-            [rt, ch] + ps, pt.exp(ddmsa_logp(rt, ch, *ps)))
-    return _ICDF_FN
+    rt, ch = pt.dvector("rt"), pt.dvector("ch")
+    ps = [pt.dscalar(n) for n in ["a", "z", "v", "t", "sv", "sa", "st", "sz"]]
+    return pytensor.function([rt, ch] + ps, pt.exp(ddmsa_logp(rt, ch, *ps)))
 
 
 def sample_ddmsa_exact(a, z, v, t, sv=0.0, sa=0.0, st=0.0, sz=0.0, n_trials=500,
-                       rng=None, seed=None, n_grid=8000, max_dt=30.0):
+                       seed=None, n_grid=8000, max_dt=30.0):
     """Draw exact samples by inverting the analytic CDF. Scalar parameters only.
 
     Preferred over simulate_ddmsa for parameter recovery. Euler-Maruyama overshoots
@@ -278,8 +273,7 @@ def sample_ddmsa_exact(a, z, v, t, sv=0.0, sa=0.0, st=0.0, sz=0.0, n_trials=500,
     Returns:
         (n_trials, 2) array of [rt, response].
     """
-    if rng is None:
-        rng = np.random.default_rng(seed)
+    rng = np.random.default_rng(seed)
     f = _icdf_density_fn()
     a, z, v, t, sv, sa, st, sz = (float(x) for x in (a, z, v, t, sv, sa, st, sz))
 
@@ -340,7 +334,7 @@ def DDMSA(name, a, z, v, t, sv=0.0, sa=0.0, st=0.0, sz=0.0, n_quad=N_QUAD,
 
     def random(*args, rng=None, size=None):
         n = 1 if size is None else int(np.prod(size))
-        out = sample_ddmsa_exact(n_trials=n, rng=rng,
+        out = sample_ddmsa_exact(n_trials=n, seed=rng,
                                  **{k: scalar(x) for k, x in params(args).items()})
         return out if size is None else out.reshape(tuple(size) + (2,))
 
@@ -352,16 +346,13 @@ def DDMSA(name, a, z, v, t, sv=0.0, sa=0.0, st=0.0, sz=0.0, n_quad=N_QUAD,
     )
 
 
-def make_ddmsa_model(data, sz=False, n_quad=N_QUAD, constrained=True,
-                     use_potential=False):
+def make_ddmsa_model(data, sz=False, n_quad=N_QUAD, use_potential=False):
     """Build a single-condition PyMC model for the DDM-SA.
 
     Args:
         data: (N, 2) array with columns [rt in seconds, response 0/1].
         sz: include across-trial start-point variability.
         n_quad: Gauss-Legendre nodes per variability dimension.
-        constrained: sample sa as a fraction of a, so it stays inside its
-            support by construction. Set False to sample the width directly.
         use_potential: attach the likelihood with pm.Potential instead of the
             CustomDist; cheaper, but gives up per-trial log-likelihoods.
 
@@ -371,6 +362,9 @@ def make_ddmsa_model(data, sz=False, n_quad=N_QUAD, constrained=True,
     response is at t - st/2, so the true t routinely exceeds min(RT) and a prior on
     t capped at min(RT) can exclude it outright. That mis-specification inflates a
     and sv and drives sa toward zero.
+
+    sa is sampled as a fraction of a, so it stays inside its support by
+    construction.
 
     Returns:
         pm.Model with named variables a, z, v, t, sv, sa, st and optionally sz.
@@ -386,11 +380,8 @@ def make_ddmsa_model(data, sz=False, n_quad=N_QUAD, constrained=True,
         v = pm.Normal("v", mu=0.0, sigma=2.0)
         sv = pm.HalfNormal("sv", sigma=1.5)
 
-        if constrained:
-            sa_frac = pm.Beta("sa_frac", alpha=1.5, beta=3.0)
-            sa = pm.Deterministic("sa", sa_frac * a)
-        else:
-            sa = pm.HalfNormal("sa", sigma=1.0)
+        sa_frac = pm.Beta("sa_frac", alpha=1.5, beta=3.0)
+        sa = pm.Deterministic("sa", sa_frac * a)
 
         st = pm.HalfNormal("st", sigma=0.15)
         t_edge = pm.Uniform("t_edge", lower=0.0, upper=min_rt)
@@ -404,32 +395,10 @@ def make_ddmsa_model(data, sz=False, n_quad=N_QUAD, constrained=True,
 
         kw = dict(sv=sv, sa=sa, st=st, sz=sz_val, n_quad=n_quad)
         if use_potential:
-            pm.Potential("ddmsa", ddmsa_potential(data, a=a, z=z, v=v, t=t, **kw))
+            pm.Potential("ddmsa", pt.sum(ddmsa_logp(data[:, 0], data[:, 1],
+                                                    a=a, z=z, v=v, t=t, **kw)))
         else:
             DDMSA("ddmsa", a, z, v, t, observed=data, **kw)
 
     return model
 
-
-def sample_ddmsa(model, backend="numpyro", draws=1000, tune=1000, chains=4,
-                 target_accept=0.9, random_seed=None, **kwargs):
-    """Sample a DDM-SA model with gradient-based NUTS.
-
-    backend="numpyro" compiles the log-likelihood to JAX and is several times faster
-    per gradient evaluation than the default C backend on this model.
-
-    Args:
-        model: model from make_ddmsa_model.
-        backend: "numpyro", "nutpie", "blackjax" or "pymc".
-        draws, tune, chains, target_accept, random_seed: passed to pm.sample.
-
-    Returns:
-        arviz.InferenceData.
-    """
-    import pymc as pm
-
-    with model:
-        return pm.sample(
-            draws=draws, tune=tune, chains=chains, target_accept=target_accept,
-            nuts_sampler=backend, random_seed=random_seed, **kwargs,
-        )

@@ -28,9 +28,8 @@ numpyro.set_host_device_count(2)
 import arviz as az
 import hssm
 import pandas as pd
-import pytensor.tensor as pt
 
-from saddm import ddmsa_logp
+from saddm import HSSM_PARAMS, hssm_loglik
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 SRC_CSV = os.path.join(ROOT, "data/itc_amasino/itc_amasino.csv")
@@ -54,18 +53,9 @@ KS = [1, 2, 4, 10, 50]
 N_PERMS = 5
 DRAWS, TUNE, CHAINS = 1000, 1000, 2
 SUFFIX = "_plain" if PLAIN else ""
-PARAMS = ["v", "a", "z", "t", "sv", "sa", "st"]
 FIXED = dict(sv=0.0, sa=0.0, st=0.0) if PLAIN else {}
 REPORT = [p for p in ["v_Intercept", "v_val", "v_tim", "a", "z", "t", "sv", "sa", "st"]
           if p not in FIXED]
-
-
-def ddmsa(data, v, a, z, t, sv, sa, st):
-    """ddmsa_logp as an HSSM loglik. a and the widths are in saddm's full units;
-    t is the lower edge of the non-decision distribution, so t0 = t + st/2."""
-    data = pt.reshape(data, (-1, 2))
-    return ddmsa_logp(pt.abs(data[:, 0]), data[:, 1], a=a, z=z, v=v,
-                      t=t + st / 2.0, sv=sv, sa=sa, st=st)
 
 
 def fit_one(df, tag):
@@ -77,11 +67,11 @@ def fit_one(df, tag):
     model = hssm.HSSM(
         data=df,
         model="ddm_itc" if PLAIN else "ddmsa_itc",
-        loglik=ddmsa,
+        loglik=hssm_loglik,
         loglik_kind="analytical",
         model_config={
             "response": ["rt", "response"],
-            "list_params": PARAMS,
+            "list_params": HSSM_PARAMS,
             "choices": (-1, 1),
             "bounds": bounds,
         },

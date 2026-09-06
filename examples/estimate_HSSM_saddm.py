@@ -7,23 +7,13 @@ numpyro.set_host_device_count(2)
 import arviz as az
 import hssm
 import matplotlib.pyplot as plt
-import pytensor.tensor as pt
 
 import os
 
-from saddm import ddmsa_logp
+from saddm import HSSM_PARAMS, hssm_loglik
 
 OUT_DIR = os.environ.get("OUT_DIR", os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "results", "cavanagh"))
-PARAMS = ["v", "a", "z", "t", "sv", "sa", "st"]
-
-
-def ddmsa(data, v, a, z, t, sv, sa, st):
-    """ddmsa_logp as an HSSM loglik. a and the widths are in saddm's full units;
-    t is the lower edge of the non-decision distribution, so t0 = t + st/2."""
-    data = pt.reshape(data, (-1, 2))
-    return ddmsa_logp(pt.abs(data[:, 0]), data[:, 1], a=a, z=z, v=v,
-                      t=t + st / 2.0, sv=sv, sa=sa, st=st)
 
 
 cav = hssm.load_data("cavanagh_theta")
@@ -31,11 +21,11 @@ cav = hssm.load_data("cavanagh_theta")
 model = hssm.HSSM(
     data=cav,
     model="ddmsa",
-    loglik=ddmsa,
+    loglik=hssm_loglik,
     loglik_kind="analytical",
     model_config={
         "response": ["rt", "response"],
-        "list_params": list(PARAMS),
+        "list_params": HSSM_PARAMS,
         "choices": (-1, 1),
         "bounds": {
             "v": (-10.0, 10.0),
@@ -52,10 +42,10 @@ model = hssm.HSSM(
 
 idata = model.sample(sampler="numpyro", draws=1000, tune=1000, chains=2, random_seed=20240101)
 
-print(az.summary(idata, var_names=list(PARAMS)))
+print(az.summary(idata, var_names=HSSM_PARAMS))
 print("divergences:", int(idata.sample_stats.diverging.values.sum()))
 
-az.plot_trace(idata, var_names=list(PARAMS))
+az.plot_trace(idata, var_names=HSSM_PARAMS)
 plt.tight_layout()
 os.makedirs(OUT_DIR, exist_ok=True)
 plt.savefig(os.path.join(OUT_DIR, "figure_cavanagh_flat_traces.png"), dpi=150)

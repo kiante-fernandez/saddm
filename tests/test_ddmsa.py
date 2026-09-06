@@ -1,11 +1,10 @@
 """
 Verification suite for saddm.ddmsa — the canonical DDM-SA likelihood.
 
-Runs under pytest (checks 0-6; the slow NUTS check is CLI-only) or directly:
-    pytest tests/test_ddmsa.py
-    python tests/test_ddmsa.py [--sample]
+    pytest tests/test_ddmsa.py -s            # checks 0-5, bounds, static zero
+    SAMPLE=1 pytest tests/test_ddmsa.py -s   # also the slow NUTS check
 
-Checks, in order:
+Checks:
   0. Density is the s = 1 Wiener process (closed-form P(upper) and mean RT).
   1. Density matches the Numba reference (core PDF and quadrature integrator).
   2. Gradients match central finite differences for every parameter.
@@ -15,13 +14,13 @@ Checks, in order:
   6. Optional: a short NUTS run to confirm gradient-based MCMC works end to end.
 """
 
-import argparse
 import importlib.util
-import sys
+import os
 import time
 
 import numpy as np
 import pytensor
+import pytest
 import pytensor.tensor as pt
 
 from reference import DDMModel, ddm_pdf_core
@@ -43,7 +42,7 @@ def _fn(n_quad=7):
     return f_logp, f_grad
 
 
-def check_0_scale():
+def test_0_scale():
     """The density must be the s = 1 Wiener process, not Ratcliff's s = 0.1.
 
     For barriers 0 and a, start a*z, drift v and diffusion s, the exit probability
@@ -82,10 +81,10 @@ def check_0_scale():
     ok = worst_p < 1e-6 and worst_e < 1e-6
     print(f"    max error: P(upper) {worst_p:.2e}, E[rt] {worst_e:.2e}  "
           f"-> {'PASS' if ok else 'FAIL'}")
-    return ok
+    assert ok
 
 
-def check_1_reference():
+def test_1_reference():
     """New density vs the Numba core PDF and quadrature integrator."""
     print("\n[1] vs Numba reference")
     f_logp, _ = _fn(n_quad=15)
@@ -121,15 +120,14 @@ def check_1_reference():
 
     ok = worst < 1e-6
     print(f"    {n} densities, max relative error {worst:.3e}  -> {'PASS' if ok else 'FAIL'}")
-    return ok
+    assert ok
 
 
-def check_2_gradients():
+def test_2_gradients():
     """Analytic gradients vs central finite differences."""
     print("\n[2] gradients vs finite differences")
     f_logp, f_grad = _fn()
-    data = simulate_ddmsa(**{k: TRUE[k] for k in ["a", "z", "v", "t", "sv", "sa", "st", "sz"]},
-                          n_trials=500, seed=42)
+    data = simulate_ddmsa(**TRUE, n_trials=500, seed=42)
     rt, ch = data[:, 0], data[:, 1]
     vals = [TRUE[p] for p in PARAMS]
 
@@ -150,10 +148,10 @@ def check_2_gradients():
         print(f"    {name:10s} analytic={analytic[i]:+13.5f} numeric={numeric:+13.5f} "
               f"rel={rel:.2e} {'ok' if good else 'MISMATCH'}")
     print(f"    -> {'PASS' if ok else 'FAIL'}")
-    return ok
+    assert ok
 
 
-def check_3_edges():
+def test_3_edges():
     """logp and gradients must stay finite everywhere NUTS can wander."""
     print("\n[3] finiteness in the corners")
     f_logp, f_grad = _fn()
@@ -187,10 +185,10 @@ def check_3_edges():
         print(f"    {label:22s} logp={L:12.2f} grad finite={np.all(np.isfinite(G))} "
               f"{'' if good else '<-- BAD'}")
     print(f"    -> {'PASS' if ok else 'FAIL'}")
-    return ok
+    assert ok
 
 
-def check_bounds():
+def test_bounds():
     """sa <= 2a, sz <= 2*min(z, 1-z), st <= 2t: mass is 1 at each bound
     inclusive, rejected past it, and the Numba reference draws the same line."""
     print("\n[+] support bounds")
@@ -223,10 +221,10 @@ def check_bounds():
               f"reference agrees={agrees}  {'' if good else '<-- BAD'}")
 
     print(f"    -> {'PASS' if ok else 'FAIL'}")
-    return ok
+    assert ok
 
 
-def check_4_vector_params():
+def test_4_vector_params():
     """Vector (per-trial) parameters must reproduce the scalar result."""
     print("\n[4] per-trial parameter broadcasting")
     data = simulate_ddmsa(a=1.1, z=0.5, v=1.5, t=0.25, sv=0.8, sa=0.5, st=0.08,
@@ -258,10 +256,10 @@ def check_4_vector_params():
     ok = worst < 1e-12 and worst_v < 1e-10
     print(f"    constant vector vs scalar: {worst:.2e}")
     print(f"    trial-varying v vs loop:   {worst_v:.2e}  -> {'PASS' if ok else 'FAIL'}")
-    return ok
+    assert ok
 
 
-def check_5_backends():
+def test_5_backends():
     """Every installed backend (C, Numba, JAX) must agree; report timings."""
     print("\n[5] backend agreement and speed")
     data = simulate_ddmsa(a=1.1, z=0.5, v=1.5, t=0.25, sv=0.8, sa=0.5, st=0.08,
@@ -290,10 +288,10 @@ def check_5_backends():
         print(f"    {mode:6s} logp+grad {ms:8.2f} ms   max|delta vs C| {delta:.2e} "
               f"{'' if good else '<-- MISMATCH'}")
     print(f"    -> {'PASS' if ok else 'FAIL'}")
-    return ok
+    assert ok
 
 
-def check_static_zero():
+def test_static_zero():
     """Zero-width axes must collapse to one node, including through pm.CustomDist."""
     print("\n[+] static-zero collapse")
     ok = (_is_static_zero(0.0) and _is_static_zero(pt.constant(0.0))
@@ -321,10 +319,11 @@ def check_static_zero():
     ok = ok and pm.draw(y, random_seed=0).shape == data.shape
     print(f"    widest (sa, st, sz) quadrature grid through CustomDist: {widest}  "
           f"-> {'PASS' if ok else 'FAIL'}")
-    return ok
+    assert ok
 
 
-def check_6_nuts(backend="numpyro", draws=750, tune=750, chains=2, n_trials=2000):
+@pytest.mark.skipif(not os.environ.get("SAMPLE"), reason="set SAMPLE=1")
+def test_6_nuts(backend="numpyro", draws=750, tune=750, chains=2, n_trials=2000):
     """End-to-end gradient MCMC: sampler health plus a recovery report.
 
     Passing requires healthy geometry (no divergences, r_hat below 1.03, usable
@@ -341,8 +340,9 @@ def check_6_nuts(backend="numpyro", draws=750, tune=750, chains=2, n_trials=2000
     """
     print(f"\n[6] NUTS via {backend}")
     import arviz as az
+    import pymc as pm
 
-    from saddm.ddmsa import make_ddmsa_model, sample_ddmsa
+    from saddm.ddmsa import make_ddmsa_model
 
     truth = dict(a=1.1, z=0.5, v=1.5, t=0.25, sv=0.8, sa=0.5, st=0.08)
     data = sample_ddmsa_exact(**truth, n_trials=n_trials, seed=99)
@@ -351,8 +351,9 @@ def check_6_nuts(backend="numpyro", draws=750, tune=750, chains=2, n_trials=2000
 
     model = make_ddmsa_model(data, use_potential=True)
     t0 = time.time()
-    idata = sample_ddmsa(model, backend=backend, draws=draws, tune=tune,
-                         chains=chains, random_seed=3, progressbar=False)
+    with model:
+        idata = pm.sample(nuts_sampler=backend, draws=draws, tune=tune, chains=chains,
+                          target_accept=0.9, random_seed=3, progressbar=False)
     elapsed = time.time() - t0
 
     summary = az.summary(idata, var_names=list(truth))
@@ -374,61 +375,5 @@ def check_6_nuts(backend="numpyro", draws=750, tune=750, chains=2, n_trials=2000
           f"min ESS {min_ess:.0f}, max |z| over {core} {max_z:.2f}, "
           f"{int(summary['in_hdi'].sum())}/{len(summary)} inside 94% HDI  "
           f"-> {'PASS' if ok else 'FAIL'}")
-    return ok
+    assert ok
 
-
-def test_scale_convention():
-    assert check_0_scale()
-
-
-def test_reference_agreement():
-    assert check_1_reference()
-
-
-def test_gradients():
-    assert check_2_gradients()
-
-
-def test_edge_finiteness():
-    assert check_3_edges()
-
-
-def test_vector_params():
-    assert check_4_vector_params()
-
-
-def test_backends():
-    assert check_5_backends()
-
-
-def test_static_zero():
-    assert check_static_zero()
-
-
-def test_bounds():
-    assert check_bounds()
-
-
-if __name__ == "__main__":
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--sample", action="store_true", help="also run the NUTS check")
-    ap.add_argument("--backend", default="numpyro")
-    args = ap.parse_args()
-
-    results = {
-        "0 s=1 scale": check_0_scale(),
-        "1 reference": check_1_reference(),
-        "2 gradients": check_2_gradients(),
-        "3 edges": check_3_edges(),
-        "4 broadcasting": check_4_vector_params(),
-        "5 backends": check_5_backends(),
-        "static zero": check_static_zero(),
-        "bounds": check_bounds(),
-    }
-    if args.sample:
-        results["6 NUTS"] = check_6_nuts(backend=args.backend)
-
-    print("\n" + "=" * 52)
-    for k, v in results.items():
-        print(f"  {k:16s} {'PASS' if v else 'FAIL'}")
-    sys.exit(0 if all(results.values()) else 1)

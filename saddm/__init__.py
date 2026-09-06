@@ -9,22 +9,5 @@ start point.
 
 __version__ = "0.2.0"
 
-from .ddmsa import (
-    DDMSA,
-    ddmsa_logp,
-    ddmsa_potential,
-    make_ddmsa_model,
-    sample_ddmsa,
-    sample_ddmsa_exact,
-    simulate_ddmsa,
-)
-
-__all__ = [
-    "ddmsa_logp",
-    "ddmsa_potential",
-    "DDMSA",
-    "make_ddmsa_model",
-    "sample_ddmsa",
-    "sample_ddmsa_exact",
-    "simulate_ddmsa",
-]
+from .ddmsa import *  # noqa: F401,F403
+from .ddmsa import __all__  # noqa: F401

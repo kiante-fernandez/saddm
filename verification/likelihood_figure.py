@@ -9,6 +9,8 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+plt.rcParams.update({"axes.spines.top": False, "axes.spines.right": False,
+                     "axes.grid": True, "axes.grid.axis": "y", "grid.color": "#e8e7e2", "axes.axisbelow": True})
 import numpy as np
 import pytensor
 import pytensor.tensor as pt
@@ -41,9 +43,6 @@ for ax, (c, name) in zip(axes, [(1, "upper"), (0, "lower")]):
     ax.set_title(f"{name} boundary   sim {frac_sim:.3f} vs analytic {frac_an:.3f}",
                  fontsize=11, color=INK)
     ax.set_xlabel("response time (s)")
-    for sp in ("top", "right"):
-        ax.spines[sp].set_visible(False)
-    ax.grid(axis="y", color="#e8e7e2", lw=0.8); ax.set_axisbelow(True)
     print(f"{name}: P(sim) = {frac_sim:.4f}, P(analytic) = {frac_an:.4f}")
 axes[0].set_ylabel("density")
 axes[0].legend(frameon=False, fontsize=9)

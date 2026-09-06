@@ -12,6 +12,8 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+plt.rcParams.update({"axes.spines.top": False, "axes.spines.right": False,
+                     "axes.grid": True, "grid.color": "#e8e7e2", "axes.axisbelow": True})
 import numpy as np
 import pandas as pd
 
@@ -49,8 +51,6 @@ for ax, p in zip(axes.flat, PARAMS):
             fontsize=9, color=INK, va="top")
     ax.set_title(LABELS[p], fontsize=10)
     ax.set_xlabel("true"); ax.set_ylabel("posterior median")
-    for sp in ("top", "right"): ax.spines[sp].set_visible(False)
-    ax.grid(color="#e8e7e2", lw=0.8); ax.set_axisbelow(True)
 axes.flat[7].axis("off")
 axes.flat[7].legend(handles=[
     plt.Line2D([], [], marker="o", ls="", color=BLUE,

@@ -39,25 +39,28 @@ deliberately: newer jax silently freezes numpyro's NUTS at its initial point.
 ## Quickstart
 
 ```python
-from saddm import make_ddmsa_model, sample_ddmsa, sample_ddmsa_exact
+import pymc as pm
+from saddm import make_ddmsa_model, sample_ddmsa_exact
 
-data  = sample_ddmsa_exact(a=1.1, z=0.5, v=1.5, t=0.25,
-                           sv=0.8, sa=0.5, st=0.08, n_trials=2000)
-idata = sample_ddmsa(make_ddmsa_model(data), backend="numpyro")
+data = sample_ddmsa_exact(a=1.1, z=0.5, v=1.5, t=0.25,
+                          sv=0.8, sa=0.5, st=0.08, n_trials=2000)
+with make_ddmsa_model(data):
+    idata = pm.sample(nuts_sampler="numpyro")
 ```
 
 `saddm.ddmsa_logp(rt, response, a, z, v, t, sv, sa, st, sz)` is the per-trial
 log-likelihood; every parameter may be a scalar or a per-trial vector.
 
-With HSSM, register `saddm.ddmsa_logp` as a `loglik_kind="analytical"`
-likelihood; `examples/estimate_HSSM_saddm.py` is the minimal adapter.
+With HSSM, pass `saddm.hssm_loglik` as a `loglik_kind="analytical"` likelihood
+with `list_params=saddm.HSSM_PARAMS`; `examples/estimate_HSSM_saddm.py` is the
+minimal example.
 
 ## Layout
 
 | path | contents |
 |---|---|
 | `saddm/` | `ddmsa.py`: the likelihood and PyMC glue. |
-| `tests/` | `test_ddmsa.py`: verification suite — s = 1 closed forms, agreement with the Numba/Fortran reference, finite-difference gradients, corner finiteness, per-trial broadcasting, backend agreement, static-zero collapse (run directly with `--sample` for an end-to-end NUTS check). `reference.py` is the Numba port of the Fortran density it is held to; `test_reference.py` covers that port. |
+| `tests/` | `test_ddmsa.py`: verification suite — s = 1 closed forms, agreement with the Numba/Fortran reference, finite-difference gradients, corner finiteness, per-trial broadcasting, backend agreement, static-zero collapse (`SAMPLE=1` adds an end-to-end NUTS check). `reference.py` is the Numba port of the Fortran density it is held to; `test_reference.py` covers that port. |
 | `verification/` | `parameter_recovery.py`: 100-config NUTS recovery study. `recovery_figure.py`, `compare_to_fortran.py`, `likelihood_figure.py`: analysis and figures (read `results/reference/` by default; set `RESULTS` for a fresh run). |
 | `examples/` | HSSM applications: flat fit on cavanagh_theta, the per-subject + k-sweep replication of the Fortran intertemporal-choice analysis, hierarchical variants, and the random-effects figure. |
 | `fortran/` | The Fortran programs that produced the benchmarks, with build notes. |

@@ -12,6 +12,8 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+plt.rcParams.update({"axes.spines.top": False, "axes.spines.right": False,
+                     "axes.grid": True, "axes.grid.axis": "x", "grid.color": "#e8e7e2", "axes.axisbelow": True})
 import pandas as pd
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
@@ -37,9 +39,6 @@ for ax, (p, e) in zip(axes, effects.items()):
     ax.set_title(LABELS[p], fontsize=11, color=INK)
     ax.set_xlabel("participant offset (94% HDI)")
     ax.set_yticks([])
-    for sp in ("top", "right"):
-        ax.spines[sp].set_visible(False)
-    ax.grid(axis="x", color="#e8e7e2", lw=0.8); ax.set_axisbelow(True)
 axes[0].set_ylabel("participant (sorted per panel)")
 variant = re.sub(r"_summary\.csv$", "", os.path.basename(SUMMARY))
 fig.suptitle(f"Hierarchical DDM-SA ({variant}): participant random effects, "

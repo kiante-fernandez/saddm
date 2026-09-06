@@ -12,6 +12,8 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+plt.rcParams.update({"axes.spines.top": False, "axes.spines.right": False,
+                     "axes.grid": True, "grid.color": "#e8e7e2", "axes.axisbelow": True})
 import numpy as np
 import pandas as pd
 
@@ -48,13 +50,6 @@ BENCH = fortran_frame(pd.read_csv(os.path.join(ROOT, "data/itc_amasino/benchmark
 FORTRAN_KSWEEP = fortran_frame(pd.read_csv(os.path.join(ROOT, "data/itc_amasino/fortran_ksweep_summary.csv")))
 
 
-def style(ax):
-    for sp in ("top", "right"):
-        ax.spines[sp].set_visible(False)
-    ax.grid(color="#e8e7e2", lw=0.8)
-    ax.set_axisbelow(True)
-
-
 def per_subject():
     path = os.path.join(RESULTS, "persubject_plain.csv")
     if not os.path.exists(path):
@@ -76,7 +71,6 @@ def per_subject():
         print(f"  {p:6s} fortran={f.mean():8.4f} hssm={h.mean():8.4f} r={r:.3f}")
         ax.text(0.04, 0.94, f"r = {r:.3f}", transform=ax.transAxes, va="top", color=INK)
         ax.set_xlabel(f"{LABELS[p]}  Fortran (ML)"); ax.set_ylabel("HSSM (NUTS)")
-        style(ax)
     fig.suptitle(f"Per-subject plain DDM + drift regression: HSSM vs Fortran "
                  f"(Amasino 2019, n = {len(conv)} converged)", fontsize=11, color=INK)
     plt.tight_layout()
@@ -105,7 +99,6 @@ def ksweep():
         ax.set_xscale("log"); ax.set_xticks(FORTRAN_KSWEEP.k)
         ax.set_xticklabels(FORTRAN_KSWEEP.k)
         ax.set_xlabel("k trials per subject"); ax.set_ylabel(LABELS[p])
-        style(ax)
     axes.flat[-1].axis("off")
     handles, labels = axes.flat[0].get_legend_handles_labels()
     axes.flat[-1].legend(handles, labels, loc="center", frameon=False, fontsize=9)
