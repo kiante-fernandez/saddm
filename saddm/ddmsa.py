@@ -173,6 +173,37 @@ def _check_rt_units(rt):
         )
 
 
+def _check_widths(**named):
+    """Reject negative variability parameters supplied as concrete values.
+
+    A negative width is not merely out of range, it is invisible: the
+    Gauss-Legendre grid center + nodes * (width / 2) and its weights are both
+    symmetric under a sign flip, so Uniform(c - w/2, c + w/2) with w < 0
+    integrates the same interval in reverse and returns exactly the density of
+    |w|. Likewise only sv ** 2 enters log_sv. The support guards in ddmsa_logp
+    are upper bounds (sa <= 2a and so on), which any negative value satisfies.
+    """
+    bad = []
+    for name, x in named.items():
+        v = _static_value(x)
+        if v is None:
+            continue
+        v = np.atleast_1d(v)
+        v = v[np.isfinite(v)]
+        if v.size and float(v.min()) < 0.0:
+            bad.append(f"{name}={float(v.min()):.6g}")
+    if bad:
+        raise ValueError(
+            "variability parameters must be non-negative; got "
+            + ", ".join(bad)
+            + ". sa, st and sz are full widths of uniform distributions and sv "
+            "is a standard deviation, so a negative value has no meaning -- and "
+            "it would not be caught downstream: the quadrature grid is "
+            "symmetric under a sign flip, so the result would silently equal "
+            "the density at the absolute value."
+        )
+
+
 def ddmsa_logp(rt, response, a, z, v, t,
                sv=0.0, sa=0.0, st=0.0, sz=0.0, n_quad=N_QUAD):
     """Per-trial log-likelihood of the DDM-SA. Pure PyTensor, fully differentiable.
@@ -194,10 +225,15 @@ def ddmsa_logp(rt, response, a, z, v, t,
     Returns:
         (N,) tensor of log-densities; -1e3 where rt is below every possible
         non-decision time or a width exceeds its support (sa <= 2a,
-        st <= 2t, sz <= 2 min(z, 1 - z)).
+        st <= 2t, sz <= 2 min(z, 1 - z)) or any of sv, sa, st, sz is negative.
+
+    Raises:
+        ValueError: if response is not coded {0, 1} or {-1, 1}, or if any of
+            sv, sa, st, sz is a concrete negative value.
     """
     _check_response(response)
     _check_rt_units(rt)
+    _check_widths(sv=sv, sa=sa, st=st, sz=sz)
     
     rt = pt.as_tensor_variable(rt).astype("float64")
     response = pt.as_tensor_variable(response).astype("float64")
@@ -251,7 +287,16 @@ def ddmsa_logp(rt, response, a, z, v, t,
     sa_valid = pt.le(sa_w, 2.0 * a_v)
     sz_valid = pt.le(sz_w, 2.0 * pt.minimum(z_v, 1.0 - z_v))
     st_valid = pt.le(st_w, 2.0 * t_v)
-    return pt.switch(pt.and_(pt.and_(sa_valid, sz_valid), st_valid), result, _LOG_TINY)
+    ok = pt.and_(pt.and_(sa_valid, sz_valid), st_valid)
+    # The three guards above are upper bounds only. Widths and sv are also
+    # non-negative by definition, and a negative value would otherwise return a
+    # valid-looking density (see _check_widths), so reject it here too. This is
+    # the branch that catches a sampler proposing a negative width, which
+    # _check_widths cannot see because the value is symbolic.
+    for w in (sa_w, st_w, sz_w):
+        ok = pt.and_(ok, pt.ge(w, 0.0))
+    ok = pt.and_(ok, pt.ge(sv_v, 0.0))
+    return pt.switch(ok, result, _LOG_TINY)
 
 
 HSSM_PARAMS = ["v", "a", "z", "t", "sv", "sa", "st"]

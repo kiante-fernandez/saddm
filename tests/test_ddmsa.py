@@ -377,3 +377,36 @@ def test_6_nuts(backend="numpyro", draws=750, tune=750, chains=2, n_trials=2000)
           f"-> {'PASS' if ok else 'FAIL'}")
     assert ok
 
+
+
+def test_7_negative_widths():
+    """Negative sv/sa/st/sz are rejected, not silently mirrored.
+
+    The Gauss-Legendre grid and weights are symmetric under a sign flip of the
+    width, and only sv ** 2 enters the drift integral, so before this check a
+    negative value returned the density at its absolute value with no warning.
+    The existing support guards are upper bounds, which any negative satisfies.
+    """
+    rt = np.array([0.6, 0.9, 1.4])
+    resp = np.array([0.0, 1.0, 1.0])
+    base = dict(a=1.1, z=0.5, v=1.5, t=0.25, sv=0.8, sa=0.5, st=0.08)
+
+    good = ddmsa_logp(rt, resp, **base).eval()
+    assert np.all(np.isfinite(good))
+
+    # concrete negatives raise, including a single bad entry in a per-trial vector
+    for bad in [dict(sv=-0.8), dict(sa=-0.5), dict(st=-0.08), dict(sz=-0.1),
+                dict(sa=-1e-12), dict(sa=np.array([0.5, 0.5, -0.5]))]:
+        with pytest.raises(ValueError, match="non-negative"):
+            ddmsa_logp(rt, resp, **{**base, **bad})
+        name = next(iter(bad))
+        print(f"    concrete {name} rejected")
+
+    # a symbolic negative width (what a sampler proposes) is rejected by the
+    # graph instead, since the eager check cannot see the value
+    sa = pt.dscalar("sa")
+    f = pytensor.function([sa], ddmsa_logp(rt, resp, a=1.1, z=0.5, v=1.5, t=0.25,
+                                          sv=0.8, sa=sa, st=0.08))
+    assert np.allclose(f(0.5), good)
+    assert np.all(np.asarray(f(-0.5)) <= -1e3 + 1e-9), "negative sa must be rejected"
+    print("    symbolic sa=-0.5 -> rejected")
