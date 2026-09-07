@@ -28,6 +28,7 @@ and sa by 10; t, st and relative z are unchanged.
 from __future__ import annotations
 
 import functools
+import warnings
 
 import numpy as np
 import pytensor.tensor as pt
@@ -112,6 +113,65 @@ def _uniform_axis(center, width, n_quad):
     grid = center[:, None] + nodes[None, :] * (width[:, None] / 2.0)
     return grid, log_w
 
+def _static_value(x):
+    """The concrete array behind x, or None if x is only known symbolically.
+
+    Mirrors _is_static_zero: pm.CustomDist and hssm hand logp TensorConstants for
+    data, so eager validation still fires on the paths users actually call.
+    """
+    if isinstance(x, pt.TensorConstant):
+        return np.asarray(x.data)
+    if isinstance(x, (int, float, np.number, np.ndarray, list, tuple)):
+        return np.asarray(x, dtype="float64")
+    return None
+
+
+_VALID_CODINGS = ({0.0, 1.0}, {-1.0, 1.0}, {0.0}, {1.0}, {-1.0})
+
+
+def _check_response(response):
+    """Reject response codings that pt.gt(response, 0.5) would silently mis-split.
+
+    {1, 2} coding puts BOTH levels above 0.5, so every trial would be scored
+    against the upper boundary and the likelihood would be silently wrong.
+    """
+    r = _static_value(response)
+    if r is None:
+        return
+    u = set(np.unique(r[np.isfinite(r)]).tolist())
+    if not u or any(u <= ok for ok in _VALID_CODINGS):
+        return
+    raise ValueError(
+        f"response must be coded {{0, 1}} or {{-1, 1}}; got unique values "
+        f"{sorted(u)}. Responses are split with `response > 0.5`, so a coding "
+        f"such as {{1, 2}} would place every trial on the upper boundary and "
+        f"silently return a wrong likelihood. Recode, e.g. "
+        f"`response = (response == upper_code).astype(float)`."
+    )
+
+
+def _check_rt_units(rt):
+    """Warn when rt looks like milliseconds rather than seconds.
+
+    A unit error returns a finite, plausible-looking log-density (about -74 per
+    trial for rt in ms), so nothing else in the pipeline flags it.
+    """
+    t = _static_value(rt)
+    if t is None:
+        return
+    t = t[np.isfinite(t)]
+    if t.size == 0:
+        return
+    med = float(np.median(np.abs(t)))
+    if med > 50.0:
+        warnings.warn(
+            f"rt has median {med:.1f}; ddmsa_logp expects SECONDS (s = 1 "
+            f"convention). This looks like milliseconds -- divide by 1000. "
+            f"Milliseconds do not error, they return a finite but meaningless "
+            f"log-density.",
+            UserWarning, stacklevel=3,
+        )
+
 
 def ddmsa_logp(rt, response, a, z, v, t,
                sv=0.0, sa=0.0, st=0.0, sz=0.0, n_quad=N_QUAD):
@@ -136,6 +196,9 @@ def ddmsa_logp(rt, response, a, z, v, t,
         non-decision time or a width exceeds its support (sa <= 2a,
         st <= 2t, sz <= 2 min(z, 1 - z)).
     """
+    _check_response(response)
+    _check_rt_units(rt)
+    
     rt = pt.as_tensor_variable(rt).astype("float64")
     response = pt.as_tensor_variable(response).astype("float64")
     ones = pt.ones_like(rt)
