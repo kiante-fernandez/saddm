@@ -346,7 +346,8 @@ def DDMSA(name, a, z, v, t, sv=0.0, sa=0.0, st=0.0, sz=0.0, n_quad=N_QUAD,
     )
 
 
-def make_ddmsa_model(data, sz=False, n_quad=N_QUAD, use_potential=False):
+def make_ddmsa_model(data, sz=False, n_quad=N_QUAD, use_potential=False,
+                     priors=None):
     """Build a single-condition PyMC model for the DDM-SA.
 
     Args:
@@ -373,22 +374,35 @@ def make_ddmsa_model(data, sz=False, n_quad=N_QUAD, use_potential=False):
 
     data = np.asarray(data, dtype="float64")
     min_rt = float(data[:, 0].min())
+    # st is a duration, so its scale is the data's, not a constant. The spread of
+    # the RT distribution above its fastest response is the natural yardstick: a
+    # non-decision component cannot vary by much more than the RTs themselves do.
+    st_scale = float(np.median(data[:, 0]) - min_rt)
+
+    given = dict(priors or {})
+    unknown = set(given) - {"a", "z", "v", "sv", "sa_frac", "st", "t_edge", "sz_frac"}
+    if unknown:
+        raise ValueError(f"unknown prior name(s): {sorted(unknown)}")
+
+    def rv(name, default):
+        """The caller's prior for `name`, else the default. Callables take the name."""
+        return given[name](name) if name in given else default()
 
     with pm.Model() as model:
-        a = pm.Uniform("a", lower=0.3, upper=5.0)
-        z = pm.Beta("z", alpha=3.0, beta=3.0)
-        v = pm.Normal("v", mu=0.0, sigma=2.0)
-        sv = pm.HalfNormal("sv", sigma=1.5)
+        a = rv("a", lambda: pm.Uniform("a", lower=0.3, upper=5.0))
+        z = rv("z", lambda: pm.Beta("z", alpha=3.0, beta=3.0))
+        v = rv("v", lambda: pm.Normal("v", mu=0.0, sigma=2.0))
+        sv = rv("sv", lambda: pm.HalfNormal("sv", sigma=1.5))
 
-        sa_frac = pm.Beta("sa_frac", alpha=1.5, beta=3.0)
+        sa_frac = rv("sa_frac", lambda: pm.Beta("sa_frac", alpha=1.5, beta=3.0))
         sa = pm.Deterministic("sa", sa_frac * a)
 
-        st = pm.HalfNormal("st", sigma=0.15)
-        t_edge = pm.Uniform("t_edge", lower=0.0, upper=min_rt)
+        st = rv("st", lambda: pm.HalfNormal("st", sigma=st_scale))
+        t_edge = rv("t_edge", lambda: pm.Uniform("t_edge", lower=0.0, upper=min_rt))
         t = pm.Deterministic("t", t_edge + st / 2.0)
 
         if sz:
-            sz_frac = pm.Beta("sz_frac", alpha=1.5, beta=3.0)
+            sz_frac = rv("sz_frac", lambda: pm.Beta("sz_frac", alpha=1.5, beta=3.0))
             sz_val = pm.Deterministic("sz", sz_frac * 2.0 * pt.minimum(z, 1.0 - z))
         else:
             sz_val = 0.0
