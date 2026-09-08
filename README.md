@@ -51,8 +51,13 @@ with make_ddmsa_model(data):
 `saddm.ddmsa_logp(rt, response, a, z, v, t, sv, sa, st, sz)` is the per-trial
 log-likelihood; every parameter may be a scalar or a per-trial vector.
 
+`sa` is weakly identified at typical N (a few hundred to a few thousand
+trials): its likelihood SE is comparable to the parameter itself, it trades off
+against `t`, and it is not distinguishable from start-point variability `sz` at
+N ≈ 200. Report it with its interval, not as a point estimate.
+
 With HSSM, pass `saddm.hssm_loglik` as a `loglik_kind="analytical"` likelihood
-with `list_params=saddm.HSSM_PARAMS`; `examples/estimate_HSSM_saddm.py` is the
+with `list_params=list(saddm.HSSM_PARAMS)` (a copy: HSSM appends to the list it is given); `examples/estimate_HSSM_saddm.py` is the
 minimal example.
 
 ## Layout

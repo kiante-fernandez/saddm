@@ -114,8 +114,10 @@ def fit_and_extract(cfg, n_trials=N_TRIALS):
         )
 
     rhat = az.rhat(trace)
+    ess = az.ess(trace)
     for param in PARAM_NAMES:
         result[f'rhat_{param}'] = float(rhat[param].values)
+        result[f'ess_{param}'] = float(ess[param].values)
 
     result['n_divergences'] = int(trace.sample_stats.diverging.values.sum())
 

@@ -71,7 +71,7 @@ def fit_one(df, tag):
         loglik_kind="analytical",
         model_config={
             "response": ["rt", "response"],
-            "list_params": HSSM_PARAMS,
+            "list_params": list(HSSM_PARAMS),
             "choices": (-1, 1),
             "bounds": bounds,
         },

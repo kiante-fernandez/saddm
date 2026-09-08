@@ -24,11 +24,14 @@ import pytest
 import pytensor.tensor as pt
 
 from reference import DDMModel, ddm_pdf_core
-from saddm.ddmsa import (DDMSA, _LOG_TINY, _is_static_zero, ddmsa_logp,
+from saddm.ddmsa import (DDMSA, N_QUAD, _is_static_zero, ddmsa_logp,
                          sample_ddmsa_exact, simulate_ddmsa)
 
 PARAMS = ["a", "z", "v", "t", "sv", "sa", "st", "sz"]
-TRUE = dict(a=1.1, z=0.5, v=1.5, t=0.25, sv=0.8, sa=0.5, st=0.08, sz=0.1)
+# sa and sz are alternative accounts of the same variability and never both
+# active in a real fit, so each config activates one of them.
+TRUE = dict(a=1.1, z=0.5, v=1.5, t=0.25, sv=0.8, sa=0.5, st=0.08, sz=0.0)
+TRUE_SZ = {**TRUE, "sa": 0.0, "sz": 0.1}
 
 
 def _fn(n_quad=7):
@@ -105,9 +108,9 @@ def test_1_reference():
 
     for a, z, v, t, sv, sa, st, sz in [
         (1.2, 0.5, 0.3, 0.3, 0.15, 0.2, 0.05, 0.0),
-        (1.5, 0.5, 0.2, 0.3, 0.20, 0.15, 0.08, 0.1),
+        (1.5, 0.5, 0.2, 0.3, 0.20, 0.0, 0.08, 0.1),
         (1.1, 0.5, 3.2, 0.22, 2.3, 1.0, 0.10, 0.0),
-        (1.1, 0.5, 2.0, 0.22, 1.0, 0.5, 0.10, 0.2),
+        (1.1, 0.5, 2.0, 0.22, 1.0, 0.0, 0.10, 0.2),
         (1.1, 0.5, 1.5, 0.25, 0.8, 1.6, 0.08, 0.0),
     ]:
         for rt in [t + 0.1, t + 0.35, t + 0.9]:
@@ -127,9 +130,17 @@ def test_2_gradients():
     """Analytic gradients vs central finite differences."""
     print("\n[2] gradients vs finite differences")
     f_logp, f_grad = _fn()
-    data = simulate_ddmsa(**TRUE, n_trials=500, seed=42)
+    ok = True
+    for truth in (TRUE, TRUE_SZ):
+        ok &= _check_gradients(f_logp, f_grad, truth)
+    print(f"    -> {'PASS' if ok else 'FAIL'}")
+    assert ok
+
+
+def _check_gradients(f_logp, f_grad, truth):
+    data = simulate_ddmsa(**truth, n_trials=500, seed=42)
     rt, ch = data[:, 0], data[:, 1]
-    vals = [TRUE[p] for p in PARAMS]
+    vals = [truth[p] for p in PARAMS]
 
     def total(v):
         return float(np.sum(f_logp(rt, ch, *v)))
@@ -137,6 +148,8 @@ def test_2_gradients():
     analytic = f_grad(rt, ch, *vals)
     ok = True
     for i, name in enumerate(PARAMS):
+        if vals[i] == 0.0:
+            continue  # inactive width; the negative side is outside the support
         h = 1e-5 * max(abs(vals[i]), 1e-2)
         vp, vm = list(vals), list(vals)
         vp[i] += h
@@ -147,12 +160,12 @@ def test_2_gradients():
         ok &= good
         print(f"    {name:10s} analytic={analytic[i]:+13.5f} numeric={numeric:+13.5f} "
               f"rel={rel:.2e} {'ok' if good else 'MISMATCH'}")
-    print(f"    -> {'PASS' if ok else 'FAIL'}")
-    assert ok
+    return ok
 
 
 def test_3_edges():
-    """logp and gradients must stay finite everywhere NUTS can wander."""
+    """logp and gradients stay finite everywhere NUTS can wander; outside the
+    support logp is -inf (a rejection, not a plateau) with finite gradients."""
     print("\n[3] finiteness in the corners")
     f_logp, f_grad = _fn()
     data = simulate_ddmsa(a=1.1, z=0.5, v=1.5, t=0.25, sv=0.8, sa=0.5, st=0.08,
@@ -180,9 +193,10 @@ def test_3_edges():
         vals = [p[k] for k in PARAMS]
         L = float(np.sum(f_logp(rt, ch, *vals)))
         G = np.asarray(f_grad(rt, ch, *vals), dtype=float)
-        good = np.isfinite(L) and np.all(np.isfinite(G))
+        want_inf = label.endswith("(rejected)")
+        good = (L == -np.inf if want_inf else np.isfinite(L)) and np.all(np.isfinite(G))
         ok &= good
-        print(f"    {label:22s} logp={L:12.2f} grad finite={np.all(np.isfinite(G))} "
+        print(f"    {label:30s} logp={L:12.2f} grad finite={np.all(np.isfinite(G))} "
               f"{'' if good else '<-- BAD'}")
     print(f"    -> {'PASS' if ok else 'FAIL'}")
     assert ok
@@ -194,11 +208,14 @@ def test_bounds():
     print("\n[+] support bounds")
     from scipy.integrate import quad
 
-    f_logp, _ = _fn()
+    # st = 2t is the widest possible panel and 7 nodes leave 2e-3 of its mass;
+    # finer z nodes near 0 put a spike at dt -> 0 that quad misses, so sz stays at 7.
+    fns = {7: _fn()[0], 15: _fn(n_quad=15)[0]}
     a, v, t = 1.1, 1.5, 0.25
     model = DDMModel(n_points=15)
 
     def logp(rt, resp, z, sa=0.0, st=0.0, sz=0.0):
+        f_logp = fns[15 if st else 7]
         return float(f_logp([rt], [float(resp)], a, z, v, t, 0.0, sa, st, sz)[0])
 
     def ref(z, **w):
@@ -213,7 +230,7 @@ def test_bounds():
         mass = sum(quad(lambda rt: np.exp(logp(rt, resp, z, **bound)), lo + 1e-6, t + 30,
                         limit=200)[0]
                    for resp in (0, 1))
-        rejected = np.isclose(logp(t + 0.2, 0, z, **past), float(_LOG_TINY))
+        rejected = logp(t + 0.2, 0, z, **past) == -np.inf
         agrees = ref(z, **inside) and not ref(z, **past)
         good = abs(mass - 1.0) < 1e-3 and rejected and agrees
         ok &= good
@@ -221,6 +238,36 @@ def test_bounds():
               f"reference agrees={agrees}  {'' if good else '<-- BAD'}")
 
     print(f"    -> {'PASS' if ok else 'FAIL'}")
+    assert ok
+
+
+def test_quad_default():
+    """The default n_quad, at the published ITC operating points, against a
+    61-node reference. The t panel is truncated at rt (issue #10); a panel that
+    straddled the step carried several nats per fast trial at 7 nodes."""
+    print("\n[+] default n_quad at the ITC operating points")
+    import pandas as pd
+
+    ks = pd.read_csv(os.path.join(os.path.dirname(__file__), "..", "results",
+                                  "reference", "itc_amasino", "ksweep.csv"))
+    r, c = pt.dvector("rt"), pt.dvector("ch")
+    ps = [pt.dscalar(n) for n in ["a", "z", "v", "t", "sv", "sa", "st"]]
+    f7 = pytensor.function([r, c] + ps, ddmsa_logp(r, c, *ps, n_quad=N_QUAD))
+    fref = pytensor.function([r, c] + ps, ddmsa_logp(r, c, *ps, n_quad=61))
+    worst = 0.0
+    for _, row in ks.iterrows():
+        vals = [row.a, row.z, row.v_Intercept, row.t0, row.sv, row.sa, row.st]
+        lo = row.t0 - row.st / 2.0
+        rt = lo + np.geomspace(1e-3, 4.0, 60)
+        for ch in (0.0, 1.0):
+            chv = np.full(rt.size, ch)
+            ref = fref(rt, chv, *vals)
+            keep = ref > -20.0  # the tail below that approaches the 1e-30 floor
+            d = f7(rt, chv, *vals)[keep] - ref[keep]
+            worst = max(worst, float(np.max(np.abs(d))))
+    ok = worst < 2e-2
+    print(f"    {len(ks)} operating points, max |dlogp| {worst:.2e} nats  "
+          f"-> {'PASS' if ok else 'FAIL'}")
     assert ok
 
 
@@ -329,12 +376,12 @@ def test_6_nuts(backend="numpyro", draws=750, tune=750, chains=2, n_trials=2000)
     Passing requires healthy geometry (no divergences, r_hat below 1.03, usable
     ESS) and the four core parameters within 3 SD of the truth.
 
-    Recovery of sa, st and sv is reported but not asserted. Their MLE is genuinely
-    biased at this sample size: over 8 datasets of 2000 trials the mean bias is
-    sa -30% (SD 0.19, occasionally collapsing to 0) and st -18%, while a, z, v and
-    t stay within 3%. The bias shrinks with N (sa -5% at 20k and at 200k), so it is
-    a small-sample property of the estimator rather than a defect. HDI coverage is
-    printed for the same reason: with posteriors as correlated as (a, v, sv, sa) a
+    Recovery of sa, st and sv is reported but not asserted. Over 8 datasets of
+    2000 trials the mean bias is sa -30% (SD 0.19, occasionally collapsing to 0)
+    and st -18%, while a, z, v and t stay within 3%; sa is weakly identified at
+    this N and its estimate is pulled toward the Beta(1.5, 3) prior mean of a/3
+    (see the recovery study in verification/). HDI coverage is printed for the
+    same reason: with posteriors as correlated as (a, v, sv, sa) a
     single dataset misses individual intervals often enough that asserting it would
     be a coin flip. Calibration belongs in a many-dataset SBC run.
     """

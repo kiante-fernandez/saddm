@@ -65,7 +65,7 @@ def build():
             link = None
         return hssm.HSSM(
             data=cav, model="ddmsa", loglik=hssm_loglik, loglik_kind="analytical",
-            model_config={"response": ["rt", "response"], "list_params": HSSM_PARAMS,
+            model_config={"response": ["rt", "response"], "list_params": list(HSSM_PARAMS),
                           "choices": (-1, 1), "bounds": bounds},
             p_outlier=0.05, include=include, link_settings=link,
         )
@@ -81,7 +81,8 @@ def build():
         "subj": d.subj_ident.values,
     })
     bounds = {"v": (-10.0, 10.0), "a": (0.3, 6.0), "z": (0.05, 0.95),
-              "t": (0.0, 1.6), "sv": (0.0, 2.0), "sa": (0.0, 3.0), "st": (0.0, 2.0)}
+              "t": (0.0, float(df.rt.min())), "sv": (0.0, 2.0), "sa": (0.0, 3.0),
+              "st": (0.0, 2.0)}
     fixed = dict(sv=0.0, sa=0.0, st=0.0) if VARIANT == "itc_hier" else {}
     include = [
         {"name": "v", "formula": "v ~ 1 + val + tim + (1|subj)", "link": "identity",
@@ -94,7 +95,7 @@ def build():
     return hssm.HSSM(
         data=df, model="ddm_itc",
         loglik=hssm_loglik, loglik_kind="analytical",
-        model_config={"response": ["rt", "response"], "list_params": HSSM_PARAMS,
+        model_config={"response": ["rt", "response"], "list_params": list(HSSM_PARAMS),
                       "choices": (-1, 1), "bounds": bounds},
         p_outlier=0.05, include=include, link_settings="log_logit", **fixed,
     )
@@ -112,6 +113,9 @@ elapsed = time.time() - t0
 idata.to_netcdf(os.path.join(OUT_DIR, f"{VARIANT}_idata.nc"))
 
 s = az.summary(idata)
+if "t" in s.index and "st" in s.index:  # shared t: report the non-decision mean too
+    t0 = (idata.posterior["t"] + idata.posterior["st"] / 2.0).values
+    s.loc["t0"] = az.summary({"t0": t0}).loc["t0"]
 s.to_csv(os.path.join(OUT_DIR, f"{VARIANT}_summary.csv"))
 div = int(idata.sample_stats.diverging.values.sum())
 print(f"\n### {VARIANT}: {elapsed:.0f}s div={div} max_rhat={float(s.r_hat.max()):.3f} "

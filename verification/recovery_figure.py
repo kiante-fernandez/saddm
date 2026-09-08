@@ -46,8 +46,8 @@ for ax, p in zip(axes.flat, PARAMS):
     ax.scatter(t_[~ok], e_[~ok], s=22, facecolor="none", edgecolor=ORANGE, lw=1.2, zorder=4)
     r = np.corrcoef(t_[ok], e_[ok])[0, 1]
     cov = d.loc[ok, f"coverage_{p}"].mean()
-    print(f"  {p:3s} r={r:.3f} coverage={cov:.2f}")
-    ax.text(0.04, 0.95, f"r = {r:.2f}\ncover = {cov:.2f}", transform=ax.transAxes,
+    print(f"  {p:3s} r={r:.3f} 95% HDI coverage={cov:.2f}")
+    ax.text(0.04, 0.95, f"r = {r:.2f}\n95% cover = {cov:.2f}", transform=ax.transAxes,
             fontsize=9, color=INK, va="top")
     ax.set_title(LABELS[p], fontsize=10)
     ax.set_xlabel("true"); ax.set_ylabel("posterior median")

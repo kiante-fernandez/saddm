@@ -14,7 +14,10 @@ Per trial, with diffusion coefficient s = 1:
 
 sa, st and sz are full widths, matching simulate_ddmsa. The drift integral is
 analytic (Ratcliff's Gaussian-mixture form); the uniform integrals use
-Gauss-Legendre quadrature, accurate to ~1e-6 at the default 7 nodes.
+Gauss-Legendre quadrature, with the t panel truncated at rt. At the default
+7 nodes the per-trial error is below 1e-2 nats at the published ITC operating
+points (tests/test_ddmsa.py::test_quad_default); n_quad=15 is below 1e-3 and
+n_quad=31 below 1e-6.
 
 Ratcliff's s = 0.1 convention converts to this module by multiplying a, v, sv
 and sa by 10; t, st and relative z are unchanged.
@@ -132,10 +135,21 @@ def ddmsa_logp(rt, response, a, z, v, t,
         n_quad: Gauss-Legendre nodes per active variability dimension.
 
     Returns:
-        (N,) tensor of log-densities; -1e3 where rt is below every possible
-        non-decision time or a width exceeds its support (sa <= 2a,
-        st <= 2t, sz <= 2 min(z, 1 - z)).
+        (N,) tensor of log-densities. -1e3 where rt is below every possible
+        non-decision time; -inf where a width is negative or exceeds its support
+        (sa <= 2a, st <= 2t, sz <= 2 min(z, 1 - z)), so samplers reject rather
+        than plateau there. The quadrature grids are clipped at a >= 1e-3 and
+        1e-4 <= z <= 1 - 1e-4; below those the density is constant in a or z.
+
+    Raises:
+        ValueError: if a concrete rt contains non-finite or non-positive values.
     """
+    if not isinstance(rt, pt.Variable) or isinstance(rt, pt.TensorConstant):
+        r = np.asarray(getattr(rt, "data", rt), dtype="float64")
+        bad = np.flatnonzero(~(np.isfinite(r) & (r > 0.0)))
+        if bad.size:
+            raise ValueError(f"{bad.size} rt values are not finite and positive, "
+                             f"first at indices {bad[:5].tolist()}")
     rt = pt.as_tensor_variable(rt).astype("float64")
     response = pt.as_tensor_variable(response).astype("float64")
     ones = pt.ones_like(rt)
@@ -155,8 +169,21 @@ def ddmsa_logp(rt, response, a, z, v, t,
     z_eff = pt.switch(upper, 1.0 - z_v, z_v)
 
     a_grid, log_wa = _uniform_axis(a_v, sa_w, n_quad)
-    t_grid, log_wt = _uniform_axis(t_v, st_w, n_quad)
     z_grid, log_wz = _uniform_axis(z_eff, sz_w, n_quad)
+
+    if _is_static_zero(st_w):
+        t_grid, log_wt = _uniform_axis(t_v, st_w, n_quad)
+    else:
+        # The t integrand vanishes for t_i >= rt, and a Gauss-Legendre panel that
+        # straddles that step loses its convergence (errors of several nats on
+        # fast trials at 7 nodes). Integrate only the fraction of the panel below
+        # rt and rescale the weights by it. frac == 0 (rt below the whole panel)
+        # keeps the full grid, where every node is then invalid.
+        t_lo = t_v - st_w / 2.0
+        frac = pt.clip((rt - t_lo) / pt.maximum(st_w, 1e-12), 0.0, 1.0)
+        frac = pt.switch(pt.gt(frac, 0.0), frac, 1.0)
+        t_grid, log_wt = _uniform_axis(t_lo + frac * st_w / 2.0, frac * st_w, n_quad)
+        log_wt = log_wt[None, :] + pt.log(frac)[:, None]
 
     a_grid = pt.maximum(a_grid, 1e-3)
     z_grid = pt.clip(z_grid, 1e-4, 1.0 - 1e-4)
@@ -181,29 +208,36 @@ def ddmsa_logp(rt, response, a, z, v, t,
     log_pdf = pt.switch(valid, log_f + log_sv - 2.0 * pt.log(a4), _LOG_TINY)
 
     log_w = (pt.as_tensor_variable(log_wa)[None, :, None, None]
-             + pt.as_tensor_variable(log_wt)[None, None, :, None]
+             + pt.atleast_2d(pt.as_tensor_variable(log_wt))[:, None, :, None]
              + pt.as_tensor_variable(log_wz)[None, None, None, :])
 
-    result = pt.logsumexp((log_pdf + log_w).reshape((rt.shape[0], -1)), axis=-1)
-    sa_valid = pt.le(sa_w, 2.0 * a_v)
-    sz_valid = pt.le(sz_w, 2.0 * pt.minimum(z_v, 1.0 - z_v))
-    st_valid = pt.le(st_w, 2.0 * t_v)
-    return pt.switch(pt.and_(pt.and_(sa_valid, sz_valid), st_valid), result, _LOG_TINY)
+    lw = (log_pdf + log_w).reshape((rt.shape[0], -1))
+    m = pt.max(lw, axis=-1)  # explicit shift: pt.logsumexp underflows to -inf unrewritten
+    result = m + pt.log(pt.sum(pt.exp(lw - m[:, None]), axis=-1))
+    # Widths are non-negative by definition; the grid is symmetric under a sign
+    # flip, so without the lower bound a negative width returns the density at |w|.
+    ok = pt.and_(pt.ge(sv_v, 0.0), pt.and_(pt.ge(sa_w, 0.0), pt.le(sa_w, 2.0 * a_v)))
+    ok = pt.and_(ok, pt.and_(pt.ge(sz_w, 0.0), pt.le(sz_w, 2.0 * pt.minimum(z_v, 1.0 - z_v))))
+    ok = pt.and_(ok, pt.and_(pt.ge(st_w, 0.0), pt.le(st_w, 2.0 * t_v)))
+    return pt.switch(ok, result, -np.inf)
 
 
+# Pass a copy (list(HSSM_PARAMS)) to hssm.HSSM: it appends "p_outlier" to the
+# list it is given in place, which breaks the next model built in the process.
 HSSM_PARAMS = ["v", "a", "z", "t", "sv", "sa", "st"]
 
 
-def hssm_loglik(data, v, a, z, t, sv, sa, st):
+def hssm_loglik(data, v, a, z, t, sv, sa, st, n_quad=N_QUAD):
     """ddmsa_logp as an HSSM loglik_kind="analytical" likelihood.
 
     Pass with model_config["list_params"] = HSSM_PARAMS. a and the widths are in
     saddm's full units; t is the lower edge of the non-decision distribution, so
     the actual t0 is t + st/2. Fix a width to 0.0 in hssm.HSSM for a plain DDM.
+    functools.partial(hssm_loglik, n_quad=15) raises the node count.
     """
     data = pt.reshape(data, (-1, 2))
     return ddmsa_logp(pt.abs(data[:, 0]), data[:, 1], a=a, z=z, v=v,
-                      t=t + st / 2.0, sv=sv, sa=sa, st=st)
+                      t=t + st / 2.0, sv=sv, sa=sa, st=st, n_quad=n_quad)
 
 
 def simulate_ddmsa(a, z, v, t, sv=0.0, sa=0.0, st=0.0, sz=0.0,
@@ -365,6 +399,11 @@ def make_ddmsa_model(data, sz=False, n_quad=N_QUAD, use_potential=False):
 
     sa is sampled as a fraction of a, so it stays inside its support by
     construction.
+
+    The priors are fixed and sized for sub-second decision tasks (st ~
+    HalfNormal(0.15) puts P(st > 0.5) at 1e-3). For slower tasks, or to change
+    the sa prior that shrinks small-N estimates toward a/3, build the model
+    directly with DDMSA and your own priors.
 
     Returns:
         pm.Model with named variables a, z, v, t, sv, sa, st and optionally sz.

@@ -25,7 +25,7 @@ model = hssm.HSSM(
     loglik_kind="analytical",
     model_config={
         "response": ["rt", "response"],
-        "list_params": HSSM_PARAMS,
+        "list_params": list(HSSM_PARAMS),
         "choices": (-1, 1),
         "bounds": {
             "v": (-10.0, 10.0),

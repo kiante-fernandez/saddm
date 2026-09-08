@@ -31,8 +31,16 @@ a default run never touches the tracked reference figures.
 ## Results
 
 Recovery over 100 datasets (500 trials each): a/z/v/t at r = 0.93–0.98 with
-near-nominal coverage; sv/sa/st at r = 0.65–0.71, with non-convergence
-confined to extreme true `sv`. Per-subject ITC fits reproduce the Fortran
-benchmark at r = 0.95 (value coefficient), r = 0.97 (drift intercept and
-delay coefficient), r = 0.99 (t0), r = 0.81 (a) and r = 0.89 (z); the
-population k-sweep tracks the Fortran curve on identical trial samples.
+near-nominal 95 % HDI coverage; sv/sa/st at r = 0.65–0.71. `sa` is under-covered
+(0.83 at the R̂ ≤ 1.01 gate): at N = 500 it is weakly identified and shrinks
+toward the `Beta(1.5, 3)` prior mean of a/3, so treat small-N `sa` as an upper
+bound. Non-convergence (14/100 configs, R̂ ≈ 1.6 with zero divergences, all
+parameters at once) is associated with small true `a` and `sa`, not with `sv`;
+that signature looks like a stuck chain rather than posterior geometry. The
+study inverts the same likelihood at the same `n_quad` it fits, so it checks
+the estimator, not the quadrature. Per-subject ITC fits agree with the Fortran
+benchmark at r = 0.95 (value coefficient), r = 0.97 (drift intercept and delay
+coefficient), r = 0.99 (t0), r = 0.81 (a) and r = 0.89 (z). In the population
+k-sweep, a, t0, z and st track the Fortran curve within 3–6 %; sv and sa do not
+(both are weakly identified at these N and the two implementations disagree in
+direction).
