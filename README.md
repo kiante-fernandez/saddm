@@ -9,13 +9,6 @@ Diffusion decision model with across-trial variability in boundary separation
 (`sa`), drift (`sv`), and non-decision time (`st`). This codebase presents the 
 DDM-SA as a fully differentiable PyTensor likelihood for gradient-based Bayesian estimation.
 
-The likelihood is analytic (Navarro–Fuss density; drift variability integrated
-in closed form, uniform variability by Gauss–Legendre quadrature), so NUTS gets
-exact gradients. It is validated against the Fortran implementation the model
-was originally developed in; the Fortran programs, the data, and reference
-results are in this repository so every validation is reproducible from a
-clone.
-
 ## Install
 
 From PyPI:
@@ -33,9 +26,6 @@ pip install -e ".[test]"        # + pytest, numba
 pip install -e ".[hssm]"        # everything the examples need
 ```
 
-The `sampling` and `hssm` extras pin `jax==0.5.3` / `numpyro==0.19.0`
-deliberately: newer jax silently freezes numpyro's NUTS at its initial point.
-
 ## Quickstart
 
 ```python
@@ -50,27 +40,6 @@ with make_ddmsa_model(data):
 
 `saddm.ddmsa_logp(rt, response, a, z, v, t, sv, sa, st, sz)` is the per-trial
 log-likelihood; every parameter may be a scalar or a per-trial vector.
-
-`sa` is weakly identified at typical N (a few hundred to a few thousand
-trials): its likelihood SE is comparable to the parameter itself, it trades off
-against `t`, and it is not distinguishable from start-point variability `sz` at
-N ≈ 200. Report it with its interval, not as a point estimate.
-
-With HSSM, pass `saddm.hssm_loglik` as a `loglik_kind="analytical"` likelihood
-with `list_params=list(saddm.HSSM_PARAMS)` (a copy: HSSM appends to the list it is given); `examples/estimate_HSSM_saddm.py` is the
-minimal example.
-
-## Layout
-
-| path | contents |
-|---|---|
-| `saddm/` | `ddmsa.py`: the likelihood and PyMC glue. |
-| `tests/` | `test_ddmsa.py`: verification suite — s = 1 closed forms, agreement with the Numba/Fortran reference, finite-difference gradients, corner finiteness, per-trial broadcasting, backend agreement, static-zero collapse (`SAMPLE=1` adds an end-to-end NUTS check). `reference.py` is the Numba port of the Fortran density it is held to; `test_reference.py` covers that port. |
-| `verification/` | `parameter_recovery.py`: 100-config NUTS recovery study. `recovery_figure.py`, `compare_to_fortran.py`, `likelihood_figure.py`: analysis and figures (read `results/reference/` by default; set `RESULTS` for a fresh run). |
-| `examples/` | HSSM applications: flat fit on cavanagh_theta, the per-subject + k-sweep replication of the Fortran intertemporal-choice analysis, hierarchical variants, and the random-effects figure. |
-| `fortran/` | The Fortran programs that produced the benchmarks, with build notes. |
-| `data/itc_amasino/` | Amasino et al. (2019) trials, the Fortran benchmarks, and the exact k-sweep permutation files. |
-| `results/reference/` | Reference outputs: recovery, ITC, hierarchical, and cavanagh results with figures. Everything else under `results/` is gitignored, and every script writes there by default. |
 
 ## Citation
 
