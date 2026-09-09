@@ -69,14 +69,8 @@ def generate_parameter_grid(n=N_CONFIGS, seed=2024):
 
 
 def make_model(data):
-    """Single-condition DDM-SA with the study's priors.
-
-    Non-decision time is sampled by the lower edge of its uniform, t_edge, bounded
-    by the fastest RT; with st > 0 the true t routinely exceeds min(RT), so
-    bounding t itself would exclude it. sa is a fraction of a, so it stays inside
-    its support. st is a duration, so its prior scale is the data's: the spread of
-    the RTs above the fastest one.
-    """
+    """Single-condition DDM-SA with the study's priors. t is sampled by its lower
+    edge (bounded by min RT), sa as a fraction of a, st on the data's RT scale."""
     min_rt = float(data[:, 0].min())
     st_scale = float(np.median(data[:, 0]) - min_rt)
     with pm.Model() as model:
@@ -109,9 +103,12 @@ def fit_and_extract(cfg, n_trials=N_TRIALS):
 
     with make_model(data), warnings.catch_warnings():
         warnings.simplefilter("ignore")
+        # jitter=False: a jittered start can send a chain to a ~ 5 where the
+        # step size collapses and it never moves (one stuck chain in ~15% of configs)
         trace = pm.sample(nuts_sampler="numpyro", draws=N_DRAWS, tune=N_TUNE,
                           chains=N_CHAINS, target_accept=TARGET_ACCEPT,
-                          progressbar=False, random_seed=cfg['config_id'])
+                          progressbar=False, random_seed=cfg['config_id'],
+                          nuts_sampler_kwargs={"jitter": False})
 
     # Extract results
     result = {'config_id': cfg['config_id']}

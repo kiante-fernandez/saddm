@@ -1,6 +1,4 @@
-"""Numba reference for the DDM-SA density, ported from the FC/GQ/FFC/COR routines
-in fortran/fit_ddm_itc_sa.f90. Shares no code with saddm.ddmsa; test_ddmsa.py holds
-the PyTensor likelihood to it."""
+"""Numba port of the Fortran density (fortran/fit_ddm_itc_sa.f90); the test oracle."""
 
 from math import ceil, exp, floor, log, pi, sin, sqrt
 

@@ -1,30 +1,22 @@
 """
 DDM-SA: drift diffusion model with across-trial variability in boundary separation.
 
-Canonical fully differentiable implementation. Built from PyTensor ops only, so the
-log-likelihood has exact analytic gradients, compiles to the C, Numba and JAX
-backends unchanged, and supports NUTS via PyMC, numpyro, nutpie or blackjax.
-
-Per trial, with diffusion coefficient s = 1:
+PyTensor likelihood with analytic gradients; compiles to the C, Numba and JAX
+backends. Per trial, with diffusion coefficient s = 1:
 
     a_i ~ Uniform(a - sa/2, a + sa/2)     boundary separation
     t_i ~ Uniform(t - st/2, t + st/2)     non-decision time
     z_i ~ Uniform(z - sz/2, z + sz/2)     relative start point
     v_i ~ Normal(v, sv)                   drift rate
 
-sa, st and sz are full widths, matching simulate_ddmsa. The drift integral is
-analytic (Ratcliff's Gaussian-mixture form); the uniform integrals use
-Gauss-Legendre quadrature, with the t panel truncated at rt. At the default
-7 nodes the per-trial error is below 1e-2 nats at the published ITC operating
-points (tests/test_ddmsa.py::test_quad_default); n_quad=15 is below 1e-3 and
-n_quad=31 below 1e-6.
-
-Ratcliff's s = 0.1 convention converts to this module by multiplying a, v, sv
-and sa by 10; t, st and relative z are unchanged.
+sa, st and sz are full widths. The drift integral is analytic; the uniform
+integrals are Gauss-Legendre with the t panel truncated at rt (per-trial error
+< 1e-2 nats at 7 nodes, < 1e-3 at 15, < 1e-6 at 31). Ratcliff's s = 0.1 units
+convert by multiplying a, v, sv and sa by 10.
 
     from saddm import DDMSA
 
-    with pm.Model():                         # priors are yours; data: (N, 2) [rt, response]
+    with pm.Model():                         # data: (N, 2) array of [rt, response]
         a, z, v, t = (pm.HalfNormal("a", 3), pm.Beta("z", 3, 3), pm.Normal("v", 0, 2),
                       pm.Uniform("t", 0, data[:, 0].min()))
         DDMSA("y", a, z, v, t, sv=pm.HalfNormal("sv", 1.5), sa=pm.HalfNormal("sa", 1),
@@ -59,17 +51,9 @@ _FTT_FLOOR = np.float64(1e-30)
 
 
 def wfpt_01w(tt, w):
-    """Navarro & Fuss (2009) density f(t | 0, 1, w) for the unit-scale Wiener process.
+    """Navarro & Fuss (2009) f(tt | 0, 1, w), tt = (rt - t) / a**2, floored at 1e-30.
 
-    Both series are evaluated at fixed term counts and selected with pt.switch, which
-    keeps the graph shape static so it compiles to JAX.
-
-    Args:
-        tt: normalized decision time (rt - t) / a**2, any shape.
-        w:  relative start point in (0, 1), broadcastable with tt.
-
-    Returns:
-        Density with the broadcast shape of tt and w, floored at 1e-30.
+    Both series run at fixed term counts (static graph shape for JAX).
     """
     k_l = pt.arange(1, K_LARGE + 1, dtype="float64")
     large = _PI * pt.sum(
@@ -88,11 +72,7 @@ def wfpt_01w(tt, w):
 
 
 def _is_static_zero(x) -> bool:
-    """True when x is known to be exactly 0 while the graph is being built.
-
-    pm.CustomDist hands constant parameters to logp as TensorConstants, so those
-    count too; otherwise every zero-width axis would still cost n_quad nodes.
-    """
+    """True when x is a concrete 0 (Python number, array or TensorConstant)."""
     if isinstance(x, pt.TensorConstant):
         x = x.data
     if isinstance(x, (int, float, np.number, np.ndarray)):
@@ -102,12 +82,8 @@ def _is_static_zero(x) -> bool:
 
 
 def _uniform_axis(center, width, n_quad):
-    """Gauss-Legendre grid for Uniform(center - width/2, center + width/2).
-
-    Returns (grid, log_weights) with grid of shape (N, Q) and weights that already
-    absorb the 1/width density, so they sum to 1. A statically-zero width collapses
-    the axis to one node.
-    """
+    """(N, Q) Gauss-Legendre grid and log-weights (summing to 1) for
+    Uniform(center - width/2, center + width/2); one node if width is a static 0."""
     if _is_static_zero(width):
         return center[:, None], np.zeros(1)
 
@@ -120,31 +96,24 @@ def _uniform_axis(center, width, n_quad):
 
 def ddmsa_logp(rt, response, a, z, v, t,
                sv=0.0, sa=0.0, st=0.0, sz=0.0, n_quad=N_QUAD):
-    """Per-trial log-likelihood of the DDM-SA. Pure PyTensor, fully differentiable.
-
-    Every parameter may be a scalar or an (N,) vector, so the same function serves
-    single-condition fits, per-trial regressions and hierarchical models.
+    """Per-trial DDM-SA log-likelihood. Parameters may be scalars or (N,) vectors.
 
     Args:
-        rt:        (N,) response times in seconds, always positive.
-        response:  (N,) responses; > 0.5 is the upper boundary, so both 0/1 and
-            -1/1 coding work.
-        a, z, v, t: boundary separation, relative start point in (0, 1), drift rate,
-            non-decision time.
-        sv: SD of the Gaussian across-trial drift distribution.
-        sa, st, sz: full widths of the uniform across-trial distributions of boundary
-            separation, non-decision time and relative start point.
+        rt: (N,) response times in seconds.
+        response: (N,); > 0.5 is the upper boundary (0/1 or -1/1 coding).
+        a, z, v, t: boundary separation, start point in (0, 1), drift, non-decision time.
+        sv: SD of the across-trial drift distribution.
+        sa, st, sz: full widths of the uniform across-trial distributions.
         n_quad: Gauss-Legendre nodes per active variability dimension.
 
     Returns:
-        (N,) tensor of log-densities. -1e3 where rt is below every possible
-        non-decision time; -inf where a width is negative or exceeds its support
-        (sa <= 2a, st <= 2t, sz <= 2 min(z, 1 - z)), so samplers reject rather
-        than plateau there. The quadrature grids are clipped at a >= 1e-3 and
-        1e-4 <= z <= 1 - 1e-4; below those the density is constant in a or z.
+        (N,) log-densities. -1e3 where rt precedes every possible non-decision
+        time; -inf where a width is negative or exceeds its support (sa <= 2a,
+        st <= 2t, sz <= 2 min(z, 1 - z)). Grids are clipped at a >= 1e-3 and
+        1e-4 <= z <= 1 - 1e-4.
 
     Raises:
-        ValueError: if a concrete rt contains non-finite or non-positive values.
+        ValueError: concrete rt with non-finite or non-positive entries.
     """
     if not isinstance(rt, pt.Variable) or isinstance(rt, pt.TensorConstant):
         r = np.asarray(getattr(rt, "data", rt), dtype="float64")
@@ -173,11 +142,8 @@ def ddmsa_logp(rt, response, a, z, v, t,
     if _is_static_zero(st_w):
         t_grid, log_wt = _uniform_axis(t_v, st_w, n_quad)
     else:
-        # The t integrand vanishes for t_i >= rt, and a Gauss-Legendre panel that
-        # straddles that step loses its convergence (errors of several nats on
-        # fast trials at 7 nodes). Integrate only the fraction of the panel below
-        # rt and rescale the weights by it. frac == 0 (rt below the whole panel)
-        # keeps the full grid, where every node is then invalid.
+        # Integrate only the part of the t panel below rt (the integrand is 0
+        # above it); frac == 0 keeps the full grid, where every node is invalid.
         t_lo = t_v - st_w / 2.0
         frac = pt.clip((rt - t_lo) / pt.maximum(st_w, 1e-12), 0.0, 1.0)
         frac = pt.switch(pt.gt(frac, 0.0), frac, 1.0)
@@ -211,28 +177,24 @@ def ddmsa_logp(rt, response, a, z, v, t,
              + pt.as_tensor_variable(log_wz)[None, None, None, :])
 
     lw = (log_pdf + log_w).reshape((rt.shape[0], -1))
-    m = pt.max(lw, axis=-1)  # explicit shift: pt.logsumexp underflows to -inf unrewritten
+    m = pt.max(lw, axis=-1)  # pt.logsumexp underflows to -inf without the shift
     result = m + pt.log(pt.sum(pt.exp(lw - m[:, None]), axis=-1))
-    # Widths are non-negative by definition; the grid is symmetric under a sign
-    # flip, so without the lower bound a negative width returns the density at |w|.
+    # a negative width would silently return the density at |width|
     ok = pt.and_(pt.ge(sv_v, 0.0), pt.and_(pt.ge(sa_w, 0.0), pt.le(sa_w, 2.0 * a_v)))
     ok = pt.and_(ok, pt.and_(pt.ge(sz_w, 0.0), pt.le(sz_w, 2.0 * pt.minimum(z_v, 1.0 - z_v))))
     ok = pt.and_(ok, pt.and_(pt.ge(st_w, 0.0), pt.le(st_w, 2.0 * t_v)))
     return pt.switch(ok, result, -np.inf)
 
 
-# Pass a copy (list(HSSM_PARAMS)) to hssm.HSSM: it appends "p_outlier" to the
-# list it is given in place, which breaks the next model built in the process.
+# Pass hssm.HSSM a copy, list(HSSM_PARAMS): it appends "p_outlier" in place.
 HSSM_PARAMS = ["v", "a", "z", "t", "sv", "sa", "st"]
 
 
 def hssm_loglik(data, v, a, z, t, sv, sa, st, n_quad=N_QUAD):
     """ddmsa_logp as an HSSM loglik_kind="analytical" likelihood.
 
-    Pass with model_config["list_params"] = HSSM_PARAMS. a and the widths are in
-    saddm's full units; t is the lower edge of the non-decision distribution, so
-    the actual t0 is t + st/2. Fix a width to 0.0 in hssm.HSSM for a plain DDM.
-    functools.partial(hssm_loglik, n_quad=15) raises the node count.
+    Full units; t is the lower edge of the non-decision distribution (t0 = t + st/2).
+    Fix a width to 0.0 for a plain DDM; functools.partial sets n_quad.
     """
     data = pt.reshape(data, (-1, 2))
     return ddmsa_logp(pt.abs(data[:, 0]), data[:, 1], a=a, z=z, v=v,
@@ -241,14 +203,7 @@ def hssm_loglik(data, v, a, z, t, sv, sa, st, n_quad=N_QUAD):
 
 def simulate_ddmsa(a, z, v, t, sv=0.0, sa=0.0, st=0.0, sz=0.0,
                    n_trials=500, dt=1e-4, max_time=10.0, seed=None):
-    """Vectorized Euler-Maruyama simulator for the DDM-SA at s = 1.
-
-    Widths sa, st and sz are full widths, matching ddmsa_logp. seed is anything
-    np.random.default_rng accepts, including a Generator.
-
-    Returns:
-        (M, 2) array of [rt, response] with timed-out trials dropped.
-    """
+    """Euler-Maruyama simulator at s = 1. Returns (M, 2) [rt, response], timeouts dropped."""
     rng = np.random.default_rng(seed)
     n = int(n_trials)
 
@@ -285,7 +240,7 @@ def simulate_ddmsa(a, z, v, t, sv=0.0, sa=0.0, st=0.0, sz=0.0,
 
 @functools.cache
 def _icdf_density_fn():
-    """Compile a scalar-parameter density for the exact sampler, once."""
+    """Compiled scalar-parameter density, cached."""
     import pytensor
 
     rt, ch = pt.dvector("rt"), pt.dvector("ch")
@@ -295,16 +250,10 @@ def _icdf_density_fn():
 
 def sample_ddmsa_exact(a, z, v, t, sv=0.0, sa=0.0, st=0.0, sz=0.0, n_trials=500,
                        seed=None, n_grid=8000, max_dt=30.0):
-    """Draw exact samples by inverting the analytic CDF. Scalar parameters only.
+    """Exact samples by inverse CDF of the analytic density. Scalar parameters.
 
-    Preferred over simulate_ddmsa for parameter recovery. Euler-Maruyama overshoots
-    the boundary by O(sqrt(dt)), which inflates a and sv enough to masquerade as a
-    recovery failure; at dt=1e-4 the mean RT is biased by roughly +0.4%. This
-    sampler draws from the same density the likelihood evaluates, so any residual
-    recovery error is a property of the model rather than of the simulator.
-
-    Returns:
-        (n_trials, 2) array of [rt, response].
+    Use this for recovery studies: Euler-Maruyama overshoots the boundary and
+    biases a and sv. Returns (n_trials, 2) [rt, response].
     """
     rng = np.random.default_rng(seed)
     f = _icdf_density_fn()
@@ -340,12 +289,8 @@ def DDMSA(name, a, z, v, t, sv=0.0, sa=0.0, st=0.0, sz=0.0, n_quad=N_QUAD,
           observed=None, **kwargs):
     """DDM-SA as a pm.CustomDist over an (N, 2) matrix of [rt, response].
 
-    Records per-trial log-likelihoods, so az.loo and az.compare work. No random
-    method: draw data with sample_ddmsa_exact.
-
-    pm.CustomDist hands logp fresh symbolic inputs, so a width that is a constant
-    0 would still be integrated over n_quad nodes. Only the non-zero parameters
-    become CustomDist inputs; the zeros are baked into the graph.
+    Per-trial log-likelihoods for az.loo; no random method. Static-zero widths
+    are baked into the graph rather than passed as inputs, so they cost no nodes.
     """
     import pymc as pm
 

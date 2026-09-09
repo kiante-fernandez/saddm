@@ -46,13 +46,7 @@ def _fn(n_quad=7):
 
 
 def test_0_scale():
-    """The density must be the s = 1 Wiener process, not Ratcliff's s = 0.1.
-
-    For barriers 0 and a, start a*z, drift v and diffusion s, the exit probability
-    and mean decision time have closed forms. Numerically integrating our density
-    must reproduce the s = 1 versions; the s = 0.1 versions differ so wildly (they
-    give P(upper) = 1.000000 for every case below) that the two cannot be confused.
-    """
+    """P(upper) and E[rt] from the density match the s = 1 closed forms."""
     print("\n[0] s = 1 scale convention")
     rt_v, ch_v = pt.dvector("rt"), pt.dvector("ch")
     sc = [pt.dscalar(n) for n in "azvt"]
@@ -164,8 +158,7 @@ def _check_gradients(f_logp, f_grad, truth):
 
 
 def test_3_edges():
-    """logp and gradients stay finite everywhere NUTS can wander; outside the
-    support logp is -inf (a rejection, not a plateau) with finite gradients."""
+    """Finite logp and gradients inside the support; -inf with finite gradients outside."""
     print("\n[3] finiteness in the corners")
     f_logp, f_grad = _fn()
     data = simulate_ddmsa(a=1.1, z=0.5, v=1.5, t=0.25, sv=0.8, sa=0.5, st=0.08,
@@ -203,13 +196,11 @@ def test_3_edges():
 
 
 def test_bounds():
-    """sa <= 2a, sz <= 2*min(z, 1-z), st <= 2t: mass is 1 at each bound
-    inclusive, rejected past it, and the Numba reference draws the same line."""
+    """Mass is 1 at each support bound, -inf past it; the reference agrees."""
     print("\n[+] support bounds")
     from scipy.integrate import quad
 
-    # st = 2t is the widest possible panel and 7 nodes leave 2e-3 of its mass;
-    # finer z nodes near 0 put a spike at dt -> 0 that quad misses, so sz stays at 7.
+    # 15 nodes for st (2e-3 mass short at 7); 7 for sz (quad misses the dt -> 0 spike)
     fns = {7: _fn()[0], 15: _fn(n_quad=15)[0]}
     a, v, t = 1.1, 1.5, 0.25
     model = DDMModel(n_points=15)
@@ -242,9 +233,7 @@ def test_bounds():
 
 
 def test_quad_default():
-    """The default n_quad, at the published ITC operating points, against a
-    61-node reference. The t panel is truncated at rt (issue #10); a panel that
-    straddled the step carried several nats per fast trial at 7 nodes."""
+    """Default n_quad vs a 61-node reference at the published ITC operating points."""
     print("\n[+] default n_quad at the ITC operating points")
     import pandas as pd
 
@@ -364,19 +353,10 @@ def test_static_zero():
 
 @pytest.mark.skipif(not os.environ.get("SAMPLE"), reason="set SAMPLE=1")
 def test_6_nuts(backend="numpyro", draws=750, tune=750, chains=2, n_trials=2000):
-    """End-to-end gradient MCMC: sampler health plus a recovery report.
+    """NUTS end to end: no divergences, r_hat < 1.03, ESS > 100, a/z/v/t within 3 SD.
 
-    Passing requires healthy geometry (no divergences, r_hat below 1.03, usable
-    ESS) and the four core parameters within 3 SD of the truth.
-
-    Recovery of sa, st and sv is reported but not asserted. Over 8 datasets of
-    2000 trials the mean bias is sa -30% (SD 0.19, occasionally collapsing to 0)
-    and st -18%, while a, z, v and t stay within 3%; sa is weakly identified at
-    this N and its estimate is pulled toward the Beta(1.5, 3) prior mean of a/3
-    (see the recovery study in verification/). HDI coverage is printed for the
-    same reason: with posteriors as correlated as (a, v, sv, sa) a
-    single dataset misses individual intervals often enough that asserting it would
-    be a coin flip. Calibration belongs in a many-dataset SBC run.
+    sa, st and sv recovery and HDI coverage are printed, not asserted; see the
+    recovery study in verification/.
     """
     print(f"\n[6] NUTS via {backend}")
     import arviz as az
