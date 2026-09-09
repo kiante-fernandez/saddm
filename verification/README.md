@@ -30,6 +30,9 @@ a default run never touches the tracked reference figures.
 
 ## Results
 
+The recovery artifact in `results/reference/recovery` was produced before the
+t panel was truncated at rt (#10) and before the st prior became data-scaled
+(#19); a rerun under the current model is in progress and will replace it.
 Recovery over 100 datasets (500 trials each): a/z/v/t at r = 0.93–0.98 with
 near-nominal 95 % HDI coverage; sv/sa/st at r = 0.65–0.71. `sa` is under-covered
 (0.83 at the R̂ ≤ 1.01 gate): at N = 500 it is weakly identified and shrinks

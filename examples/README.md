@@ -28,6 +28,10 @@
   the invalid region and every proposal diverges.
 - Set HSSM bounds so the midpoint (HSSM's default initial value) is feasible —
   e.g. a `t` bound of (0, 2) starts sampling at 1.0, above most min RTs.
+- The `itc_hier` and `itc_hier_sa` variants do not converge at the default
+  settings (max R̂ 1.03 / 1.10, min ESS 56 / 20 after 3 h / 34 h, no
+  divergences). They are starting points, not results; the cavanagh variants
+  and the flat ITC fits are the ones with reference artifacts.
 
 ## Environment
 
