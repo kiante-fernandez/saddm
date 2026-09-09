@@ -10,7 +10,7 @@ Checks:
   2. Gradients match central finite differences for every parameter.
   3. logp and gradients stay finite in the corners of parameter space.
   4. Per-trial (vector) parameters agree with scalar parameters.
-  5. The C, Numba, and JAX backends agree, with timings.
+  5. The C, Numba, and JAX backends agree.
   6. Optional: a short NUTS run to confirm gradient-based MCMC works end to end.
 """
 
@@ -307,7 +307,7 @@ def test_4_vector_params():
 
 
 def test_5_backends():
-    """Every installed backend (C, Numba, JAX) must agree; report timings."""
+    """Every installed backend (C, Numba, JAX) must agree."""
     print("\n[5] backend agreement and speed")
     data = simulate_ddmsa(a=1.1, z=0.5, v=1.5, t=0.25, sv=0.8, sa=0.5, st=0.08,
                           n_trials=500, seed=42)
@@ -325,15 +325,9 @@ def test_5_backends():
         got = np.array([float(x) for x in f(*vals)])
         delta = 0.0 if ref is None else float(np.max(np.abs(got - ref)))
         ref = got if ref is None else ref
-        reps = 20
-        t0 = time.time()
-        for _ in range(reps):
-            float(f(*vals)[0])
-        ms = (time.time() - t0) / reps * 1000
         good = delta < 1e-8
         ok &= good
-        print(f"    {mode:6s} logp+grad {ms:8.2f} ms   max|delta vs C| {delta:.2e} "
-              f"{'' if good else '<-- MISMATCH'}")
+        print(f"    {mode:6s} max|delta vs C| {delta:.2e} {'' if good else '<-- MISMATCH'}")
     print(f"    -> {'PASS' if ok else 'FAIL'}")
     assert ok
 
@@ -363,7 +357,6 @@ def test_static_zero():
     direct = ddmsa_logp(data[:, 0], data[:, 1], a=a_val, z=0.5, v=1.5, t=0.25,
                         sv=0.8, sa=sa_val).sum().eval()
     ok = ok and abs(float(model.compile_logp(vars=[y])(ip)) - float(direct)) < 1e-8
-    ok = ok and pm.draw(y, random_seed=0).shape == data.shape
     print(f"    widest (sa, st, sz) quadrature grid through CustomDist: {widest}  "
           f"-> {'PASS' if ok else 'FAIL'}")
     assert ok
@@ -396,7 +389,7 @@ def test_6_nuts(backend="numpyro", draws=750, tune=750, chains=2, n_trials=2000)
     print(f"    {len(data)} trials, mean RT {data[:, 0].mean():.3f}s, "
           f"upper {data[:, 1].mean():.1%}")
 
-    model = make_ddmsa_model(data, use_potential=True)
+    model = make_ddmsa_model(data)
     t0 = time.time()
     with model:
         idata = pm.sample(nuts_sampler=backend, draws=draws, tune=tune, chains=chains,
@@ -452,7 +445,7 @@ def test_7_st_prior_scale():
     ratios = []
     for label, truth in regimes:
         data = sample_ddmsa_exact(**truth, n_trials=1500, seed=11)
-        model = make_ddmsa_model(data, use_potential=True)
+        model = make_ddmsa_model(data)
         # pm.draw on the RV, not sample_prior_predictive: only the prior on st is
         # wanted, and forward-sampling the variable avoids the (correct, but here
         # irrelevant) warning that the likelihood Potential is ignored.

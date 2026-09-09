@@ -27,7 +27,6 @@ N_CHAINS = 4
 N_DRAWS = 1000
 N_TUNE = 2000
 TARGET_ACCEPT = 0.90
-NUTS_BACKEND = "numpyro"   # ~4x the ESS/s of the default C backend
 
 PARAM_RANGES = {
     'a':      (0.65, 2.40),   # boundary separation
@@ -48,7 +47,6 @@ SHARD = int(os.environ.get('SHARD', '-1'))
 N_SHARDS = int(os.environ.get('N_SHARDS', '1'))
 _SUFFIX = f'_shard{SHARD}' if SHARD >= 0 else ''
 RESULTS_CSV = os.path.join(RESULTS_DIR, f'ddm_sa_recovery_nuts{_SUFFIX}.csv')
-FAILURES_LOG = os.path.join(RESULTS_DIR, f'failures{_SUFFIX}.log')
 
 
 def generate_parameter_grid(n=N_CONFIGS, seed=2024):
@@ -86,9 +84,9 @@ def fit_and_extract(cfg, n_trials=N_TRIALS):
     print(f"  Simulated: {len(data)} trials, mean RT={mean_rt:.3f}s, "
           f"accuracy(upper)={accuracy:.2%}")
 
-    with make_ddmsa_model(data, use_potential=True), warnings.catch_warnings():
+    with make_ddmsa_model(data), warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        trace = pm.sample(nuts_sampler=NUTS_BACKEND, draws=N_DRAWS, tune=N_TUNE,
+        trace = pm.sample(nuts_sampler="numpyro", draws=N_DRAWS, tune=N_TUNE,
                           chains=N_CHAINS, target_accept=TARGET_ACCEPT,
                           progressbar=False, random_seed=cfg['config_id'])
 
@@ -165,23 +163,10 @@ def run_recovery_study():
             header = not os.path.exists(RESULTS_CSV)
             row_df.to_csv(RESULTS_CSV, mode='a', header=header, index=False)
 
-            print(f"  Elapsed: {elapsed:.1f}s  Divergences: {result['n_divergences']}")
-            for param in PARAM_NAMES:
-                true_v = result[f'true_{param}']
-                post_v = result[f'post_median_{param}']
-                rhat_v = result[f'rhat_{param}']
-                cov = result[f'coverage_{param}']
-                print(f"    {param:3s}: true={true_v:.4f} "
-                      f"post={post_v:.4f} rhat={rhat_v:.3f} "
-                      f"cov={'Y' if cov else 'N'}")
-
+            print(f"  Elapsed: {elapsed:.1f}s  Divergences: {result['n_divergences']}  "
+                  f"max rhat: {max(result[f'rhat_{p}'] for p in PARAM_NAMES):.3f}")
         except Exception as e:
-            elapsed = time.time() - t0
-            print(f"  FAILED after {elapsed:.1f}s: {e}")
-            import traceback
-            traceback.print_exc()
-            with open(FAILURES_LOG, 'a') as f:
-                f.write(f"config_id={cfg_id} error={e}\n")
+            print(f"  FAILED after {time.time() - t0:.1f}s: {type(e).__name__}: {e}")
 
     print(f"\nResults saved to {RESULTS_CSV}")
 

@@ -43,29 +43,3 @@ def test_both_boundaries_integrate_to_one():
 def test_zero_before_ter(model):
     assert ddm_pdf_core(TER, A, Z, V, TER, 0.0) == 0.0
     assert model.pdf(TER - 0.05, A, Z, V, TER) == model.min_p
-
-
-def test_choice_coding(model):
-    """choice=1 with (z, v) must equal choice=0 with (1-z, -v), and positive drift
-    favours the upper response."""
-    z, v = 0.3, 0.4
-    up = model.log_likelihood([A, z, v, TER, 0, 0, 0, 0], [(0.5, 1)])
-    assert abs(up - model.log_likelihood([A, 1 - z, -v, TER, 0, 0, 0, 0], [(0.5, 0)])) < 1e-10
-    p = [A, Z, V, TER, 0, 0, 0, 0]
-    assert model.log_likelihood(p, [(0.5, 1)]) > model.log_likelihood(p, [(0.5, 0)])
-
-
-def test_invalid_params_give_neg_inf(model):
-    data = [(0.5, 0), (0.6, 1)]
-    for i in (0, 1, 3, 4, 5, 6, 7):
-        p = [A, Z, V, TER, 0, 0, 0, 0]
-        p[i] = -1.0
-        assert model.log_likelihood(p, data) == -np.inf
-    assert model.log_likelihood([A, 1.5, V, TER, 0, 0, 0, 0], data) == -np.inf
-
-
-def test_slow_task_ter(model):
-    """ter above 1 s is accepted whenever every RT exceeds it."""
-    data = [(1.6, 0), (1.8, 1), (2.1, 0)]
-    assert np.isfinite(model.log_likelihood([A, Z, V, 1.1, 0, 0, 0, 0], data))
-    assert model.log_likelihood([A, Z, V, 2.5, 0, 0, 0, 0], data) == 3 * np.log(model.min_p)

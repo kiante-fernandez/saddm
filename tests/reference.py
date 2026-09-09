@@ -2,11 +2,10 @@
 in fortran/fit_ddm_itc_sa.f90. Shares no code with saddm.ddmsa; test_ddmsa.py holds
 the PyTensor likelihood to it."""
 
-from math import ceil, exp, floor, isfinite, log, pi, sin, sqrt
+from math import ceil, exp, floor, log, pi, sin, sqrt
 
 import numpy as np
 from numba import float64, njit
-from scipy.special import roots_legendre
 
 
 @njit(float64(float64, float64, float64), cache=True)
@@ -115,20 +114,8 @@ class DDMModel:
     min_p = 1e-10
 
     def __init__(self, n_points=15):
-        self.nodes, self.weights = roots_legendre(n_points)
+        self.nodes, self.weights = np.polynomial.legendre.leggauss(n_points)
 
     def pdf(self, rt, a, z, v, ter, sv=0.0, sz=0.0, st=0.0, sa=0.0):
         return max(integrate(rt, a, z, v, ter, sv, sz, st, sa, self.nodes, self.weights),
                    self.min_p)
-
-    def log_likelihood(self, params, data):
-        a, z, v, ter, sv, sz, st, sa = params
-        if not (all(map(isfinite, params)) and a > 0.01 and 0 <= z <= 1 and ter >= 0
-                and min(sv, sz, st, sa) >= 0):
-            return -np.inf
-        total = 0.0
-        for rt, choice in np.asarray(data, dtype=float):
-            flip = choice > 0
-            total += log(self.pdf(abs(rt), a, 1 - z if flip else z, -v if flip else v,
-                                  ter, sv, sz, st, sa))
-        return total

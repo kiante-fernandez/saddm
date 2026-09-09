@@ -34,7 +34,6 @@ import functools
 
 import numpy as np
 import pytensor.tensor as pt
-from scipy.special import roots_legendre
 
 __all__ = [
     "ddmsa_logp",
@@ -109,7 +108,7 @@ def _uniform_axis(center, width, n_quad):
     if _is_static_zero(width):
         return center[:, None], np.zeros(1)
 
-    nodes, weights = roots_legendre(n_quad)
+    nodes, weights = np.polynomial.legendre.leggauss(n_quad)
     nodes = pt.as_tensor_variable(np.asarray(nodes, dtype="float64"))
     log_w = np.log(np.asarray(weights, dtype="float64") * 0.5)
     grid = center[:, None] + nodes[None, :] * (width[:, None] / 2.0)
@@ -154,15 +153,12 @@ def ddmsa_logp(rt, response, a, z, v, t,
     response = pt.as_tensor_variable(response).astype("float64")
     ones = pt.ones_like(rt)
 
-    a_v = pt.as_tensor_variable(a).astype("float64") * ones
-    z_v = pt.as_tensor_variable(z).astype("float64") * ones
-    v_v = pt.as_tensor_variable(v).astype("float64") * ones
-    t_v = pt.as_tensor_variable(t).astype("float64") * ones
-    sv_v = pt.as_tensor_variable(sv).astype("float64") * ones
+    def vec(x):
+        return x if _is_static_zero(x) else pt.as_tensor_variable(x).astype("float64") * ones
 
-    sa_w = sa if _is_static_zero(sa) else pt.as_tensor_variable(sa).astype("float64") * ones
-    st_w = st if _is_static_zero(st) else pt.as_tensor_variable(st).astype("float64") * ones
-    sz_w = sz if _is_static_zero(sz) else pt.as_tensor_variable(sz).astype("float64") * ones
+    a_v, z_v, v_v, t_v, sv_v = (pt.as_tensor_variable(x).astype("float64") * ones
+                                for x in (a, z, v, t, sv))
+    sa_w, st_w, sz_w = vec(sa), vec(st), vec(sz)
 
     upper = pt.gt(response, 0.5)
     v_eff = pt.switch(upper, -v_v, v_v)
@@ -341,9 +337,8 @@ def DDMSA(name, a, z, v, t, sv=0.0, sa=0.0, st=0.0, sz=0.0, n_quad=N_QUAD,
           observed=None, **kwargs):
     """DDM-SA as a pm.CustomDist over an (N, 2) matrix of [rt, response].
 
-    Preferred over a bare pm.Potential because it records per-trial log-likelihoods,
-    so az.loo and az.compare work, and it supports posterior predictive sampling
-    (through sample_ddmsa_exact, so scalar parameters only).
+    Records per-trial log-likelihoods, so az.loo and az.compare work. No random
+    method: draw data with sample_ddmsa_exact.
 
     pm.CustomDist hands logp fresh symbolic inputs, so a width that is a constant
     0 would still be integrated over n_quad nodes. Only the non-zero parameters
@@ -360,36 +355,22 @@ def DDMSA(name, a, z, v, t, sv=0.0, sa=0.0, st=0.0, sz=0.0, n_quad=N_QUAD,
     def logp(value, *args):
         return ddmsa_logp(value[:, 0], value[:, 1], n_quad=n_quad, **params(args))
 
-    def scalar(x):
-        x = np.unique(np.asarray(x, dtype="float64"))
-        if x.size != 1:
-            raise ValueError("DDMSA.random needs scalar parameters")
-        return float(x[0])
-
-    def random(*args, rng=None, size=None):
-        n = 1 if size is None else int(np.prod(size))
-        out = sample_ddmsa_exact(n_trials=n, seed=rng,
-                                 **{k: scalar(x) for k, x in params(args).items()})
-        return out if size is None else out.reshape(tuple(size) + (2,))
-
     return pm.CustomDist(
         name, *[given[k] for k in free],
-        logp=logp, random=random,
+        logp=logp,
         signature=",".join("()" for _ in free) + "->(2)",
         observed=observed, **kwargs,
     )
 
 
-def make_ddmsa_model(data, sz=False, n_quad=N_QUAD, use_potential=False,
-                     priors=None):
+def make_ddmsa_model(data, n_quad=N_QUAD, priors=None):
     """Build a single-condition PyMC model for the DDM-SA.
 
     Args:
         data: (N, 2) array with columns [rt in seconds, response 0/1].
-        sz: include across-trial start-point variability.
         n_quad: Gauss-Legendre nodes per variability dimension.
-        use_potential: attach the likelihood with pm.Potential instead of the
-            CustomDist; cheaper, but gives up per-trial log-likelihoods.
+        priors: {name: callable(name) -> RV} overriding any of a, z, v, sv,
+            sa_frac, st, t_edge.
 
     Non-decision time is parameterized by the lower edge of its uniform
     distribution, t_edge = t - st/2, bounded above by the fastest observed RT.
@@ -407,7 +388,7 @@ def make_ddmsa_model(data, sz=False, n_quad=N_QUAD, use_potential=False,
     directly with DDMSA and your own priors.
 
     Returns:
-        pm.Model with named variables a, z, v, t, sv, sa, st and optionally sz.
+        pm.Model with named variables a, z, v, t, sv, sa, st.
     """
     import pymc as pm
 
@@ -419,7 +400,7 @@ def make_ddmsa_model(data, sz=False, n_quad=N_QUAD, use_potential=False,
     st_scale = float(np.median(data[:, 0]) - min_rt)
 
     given = dict(priors or {})
-    unknown = set(given) - {"a", "z", "v", "sv", "sa_frac", "st", "t_edge", "sz_frac"}
+    unknown = set(given) - {"a", "z", "v", "sv", "sa_frac", "st", "t_edge"}
     if unknown:
         raise ValueError(f"unknown prior name(s): {sorted(unknown)}")
 
@@ -440,18 +421,7 @@ def make_ddmsa_model(data, sz=False, n_quad=N_QUAD, use_potential=False,
         t_edge = rv("t_edge", lambda: pm.Uniform("t_edge", lower=0.0, upper=min_rt))
         t = pm.Deterministic("t", t_edge + st / 2.0)
 
-        if sz:
-            sz_frac = rv("sz_frac", lambda: pm.Beta("sz_frac", alpha=1.5, beta=3.0))
-            sz_val = pm.Deterministic("sz", sz_frac * 2.0 * pt.minimum(z, 1.0 - z))
-        else:
-            sz_val = 0.0
-
-        kw = dict(sv=sv, sa=sa, st=st, sz=sz_val, n_quad=n_quad)
-        if use_potential:
-            pm.Potential("ddmsa", pt.sum(ddmsa_logp(data[:, 0], data[:, 1],
-                                                    a=a, z=z, v=v, t=t, **kw)))
-        else:
-            DDMSA("ddmsa", a, z, v, t, observed=data, **kw)
+        DDMSA("ddmsa", a, z, v, t, sv=sv, sa=sa, st=st, n_quad=n_quad, observed=data)
 
     return model
 
