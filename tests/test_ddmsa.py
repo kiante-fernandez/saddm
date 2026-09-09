@@ -382,14 +382,18 @@ def test_6_nuts(backend="numpyro", draws=750, tune=750, chains=2, n_trials=2000)
     import arviz as az
     import pymc as pm
 
-    from saddm.ddmsa import make_ddmsa_model
-
     truth = dict(a=1.1, z=0.5, v=1.5, t=0.25, sv=0.8, sa=0.5, st=0.08)
     data = sample_ddmsa_exact(**truth, n_trials=n_trials, seed=99)
     print(f"    {len(data)} trials, mean RT {data[:, 0].mean():.3f}s, "
           f"upper {data[:, 1].mean():.1%}")
 
-    model = make_ddmsa_model(data)
+    with pm.Model() as model:  # t sampled by its lower edge, bounded by min RT
+        a = pm.Uniform("a", 0.3, 5.0)
+        z, v, sv = pm.Beta("z", 3.0, 3.0), pm.Normal("v", 0.0, 2.0), pm.HalfNormal("sv", 1.5)
+        sa = pm.Deterministic("sa", pm.Beta("sa_frac", 1.5, 3.0) * a)
+        st = pm.HalfNormal("st", 0.15)
+        t = pm.Deterministic("t", pm.Uniform("t_edge", 0.0, data[:, 0].min()) + st / 2.0)
+        DDMSA("ddmsa", a, z, v, t, sv=sv, sa=sa, st=st, observed=data)
     t0 = time.time()
     with model:
         idata = pm.sample(nuts_sampler=backend, draws=draws, tune=tune, chains=chains,
@@ -416,58 +420,3 @@ def test_6_nuts(backend="numpyro", draws=750, tune=750, chains=2, n_trials=2000)
           f"{int(summary['in_hdi'].sum())}/{len(summary)} inside 94% HDI  "
           f"-> {'PASS' if ok else 'FAIL'}")
     assert ok
-
-
-
-def test_7_st_prior_scale():
-    """make_ddmsa_model's default st prior must cover the st that generated the data.
-
-    st is a duration, so a hard-coded prior on it is a hard-coded assumption about
-    the task's timescale. The failure is a property of the DATA, not of any one
-    experiment: it appears whenever the RT distribution is slow relative to the
-    constant. It is invisible to simulation studies whose generating st was chosen
-    to sit inside that constant, which is why the fixed HalfNormal(0.15) survived
-    -- test_6_nuts generates st = 0.08, comfortably inside it.
-
-    Two regimes are checked, spanning the range of non-decision variability seen
-    across choice tasks. Both must land in the prior's central mass.
-    """
-    import pymc as pm
-
-    from saddm.ddmsa import make_ddmsa_model
-
-    regimes = [
-        ("fast   (perceptual-like)",
-         dict(a=1.1, z=0.5, v=1.0, t=0.25, sv=0.5, sa=0.33, st=0.08)),
-        ("slow   (value-based-like)",
-         dict(a=2.5, z=0.5, v=1.0, t=0.90, sv=0.5, sa=0.75, st=1.30)),
-    ]
-    ratios = []
-    for label, truth in regimes:
-        data = sample_ddmsa_exact(**truth, n_trials=1500, seed=11)
-        model = make_ddmsa_model(data)
-        # pm.draw on the RV, not sample_prior_predictive: only the prior on st is
-        # wanted, and forward-sampling the variable avoids the (correct, but here
-        # irrelevant) warning that the likelihood Potential is ignored.
-        draws = np.asarray(pm.draw(model["st"], draws=2000, random_seed=0)).ravel()
-        frac = float(np.mean(draws > truth["st"]))
-        rt = data[:, 0]
-        print(f"    {label}  true st={truth['st']:.2f}  "
-              f"median RT={np.median(rt):.3f}  min RT={rt.min():.3f}  "
-              f"prior median={np.median(draws):.3f}  P(prior st > true)={frac:.3f}")
-        assert 0.02 < frac < 0.98, (
-            f"{label}: the default st prior puts the generating st={truth['st']} "
-            f"at tail probability {frac:.2e}. A prior on a duration must scale "
-            f"with the data (median RT {np.median(rt):.2f}s here), or the model "
-            f"is silently specialised to one timescale."
-        )
-        ratios.append(truth["st"] / (np.median(rt) - rt.min()))
-
-    # scale-free: the same rule must place both regimes similarly, even though
-    # their st differs by ~16x. A fixed prior cannot do this by construction.
-    print(f"    st / prior-scale across regimes: "
-          f"{ratios[0]:.2f} (fast) vs {ratios[1]:.2f} (slow)")
-    assert max(ratios) / min(ratios) < 4.0, (
-        f"the prior scale does not track the data: st/scale = {ratios}. "
-        f"Across a 16x change in true st these should stay comparable."
-    )

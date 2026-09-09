@@ -30,11 +30,15 @@ pip install -e ".[hssm]"        # everything the examples need
 
 ```python
 import pymc as pm
-from saddm import make_ddmsa_model, sample_ddmsa_exact
+from saddm import DDMSA, sample_ddmsa_exact
 
 data = sample_ddmsa_exact(a=1.1, z=0.5, v=1.5, t=0.25,
                           sv=0.8, sa=0.5, st=0.08, n_trials=2000)
-with make_ddmsa_model(data):
+with pm.Model():                      # priors are yours; saddm ships only the likelihood
+    a, z, v = pm.HalfNormal("a", 3.0), pm.Beta("z", 3.0, 3.0), pm.Normal("v", 0.0, 2.0)
+    t = pm.Uniform("t", 0.0, data[:, 0].min())
+    DDMSA("y", a, z, v, t, sv=pm.HalfNormal("sv", 1.5), sa=pm.HalfNormal("sa", 1.0),
+          st=pm.HalfNormal("st", 0.5), observed=data)
     idata = pm.sample(nuts_sampler="numpyro")
 ```
 

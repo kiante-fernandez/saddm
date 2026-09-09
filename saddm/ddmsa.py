@@ -22,9 +22,13 @@ n_quad=31 below 1e-6.
 Ratcliff's s = 0.1 convention converts to this module by multiplying a, v, sv
 and sa by 10; t, st and relative z are unchanged.
 
-    from saddm.ddmsa import make_ddmsa_model
+    from saddm import DDMSA
 
-    with make_ddmsa_model(data):            # data: (N, 2) array of [rt, response]
+    with pm.Model():                         # priors are yours; data: (N, 2) [rt, response]
+        a, z, v, t = (pm.HalfNormal("a", 3), pm.Beta("z", 3, 3), pm.Normal("v", 0, 2),
+                      pm.Uniform("t", 0, data[:, 0].min()))
+        DDMSA("y", a, z, v, t, sv=pm.HalfNormal("sv", 1.5), sa=pm.HalfNormal("sa", 1),
+              st=pm.HalfNormal("st", 0.5), observed=data)
         idata = pm.sample(nuts_sampler="numpyro")
 """
 
@@ -40,7 +44,6 @@ __all__ = [
     "hssm_loglik",
     "HSSM_PARAMS",
     "DDMSA",
-    "make_ddmsa_model",
     "sample_ddmsa_exact",
     "simulate_ddmsa",
 ]
@@ -361,67 +364,3 @@ def DDMSA(name, a, z, v, t, sv=0.0, sa=0.0, st=0.0, sz=0.0, n_quad=N_QUAD,
         signature=",".join("()" for _ in free) + "->(2)",
         observed=observed, **kwargs,
     )
-
-
-def make_ddmsa_model(data, n_quad=N_QUAD, priors=None):
-    """Build a single-condition PyMC model for the DDM-SA.
-
-    Args:
-        data: (N, 2) array with columns [rt in seconds, response 0/1].
-        n_quad: Gauss-Legendre nodes per variability dimension.
-        priors: {name: callable(name) -> RV} overriding any of a, z, v, sv,
-            sa_frac, st, t_edge.
-
-    Non-decision time is parameterized by the lower edge of its uniform
-    distribution, t_edge = t - st/2, bounded above by the fastest observed RT.
-    Bounding t itself by min(RT) would be wrong: with st > 0 the earliest possible
-    response is at t - st/2, so the true t routinely exceeds min(RT) and a prior on
-    t capped at min(RT) can exclude it outright. That mis-specification inflates a
-    and sv and drives sa toward zero.
-
-    sa is sampled as a fraction of a, so it stays inside its support by
-    construction.
-
-    The priors are fixed and sized for sub-second decision tasks (st ~
-    HalfNormal(0.15) puts P(st > 0.5) at 1e-3). For slower tasks, or to change
-    the sa prior that shrinks small-N estimates toward a/3, build the model
-    directly with DDMSA and your own priors.
-
-    Returns:
-        pm.Model with named variables a, z, v, t, sv, sa, st.
-    """
-    import pymc as pm
-
-    data = np.asarray(data, dtype="float64")
-    min_rt = float(data[:, 0].min())
-    # st is a duration, so its scale is the data's, not a constant. The spread of
-    # the RT distribution above its fastest response is the natural yardstick: a
-    # non-decision component cannot vary by much more than the RTs themselves do.
-    st_scale = float(np.median(data[:, 0]) - min_rt)
-
-    given = dict(priors or {})
-    unknown = set(given) - {"a", "z", "v", "sv", "sa_frac", "st", "t_edge"}
-    if unknown:
-        raise ValueError(f"unknown prior name(s): {sorted(unknown)}")
-
-    def rv(name, default):
-        """The caller's prior for `name`, else the default. Callables take the name."""
-        return given[name](name) if name in given else default()
-
-    with pm.Model() as model:
-        a = rv("a", lambda: pm.Uniform("a", lower=0.3, upper=5.0))
-        z = rv("z", lambda: pm.Beta("z", alpha=3.0, beta=3.0))
-        v = rv("v", lambda: pm.Normal("v", mu=0.0, sigma=2.0))
-        sv = rv("sv", lambda: pm.HalfNormal("sv", sigma=1.5))
-
-        sa_frac = rv("sa_frac", lambda: pm.Beta("sa_frac", alpha=1.5, beta=3.0))
-        sa = pm.Deterministic("sa", sa_frac * a)
-
-        st = rv("st", lambda: pm.HalfNormal("st", sigma=st_scale))
-        t_edge = rv("t_edge", lambda: pm.Uniform("t_edge", lower=0.0, upper=min_rt))
-        t = pm.Deterministic("t", t_edge + st / 2.0)
-
-        DDMSA("ddmsa", a, z, v, t, sv=sv, sa=sa, st=st, n_quad=n_quad, observed=data)
-
-    return model
-

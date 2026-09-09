@@ -19,7 +19,7 @@ import arviz as az
 import numpy as np
 import pymc as pm
 
-from saddm import make_ddmsa_model, sample_ddmsa_exact
+from saddm import DDMSA, sample_ddmsa_exact
 
 N_CONFIGS = 100
 N_TRIALS = 500
@@ -68,6 +68,29 @@ def generate_parameter_grid(n=N_CONFIGS, seed=2024):
     return configs
 
 
+def make_model(data):
+    """Single-condition DDM-SA with the study's priors.
+
+    Non-decision time is sampled by the lower edge of its uniform, t_edge, bounded
+    by the fastest RT; with st > 0 the true t routinely exceeds min(RT), so
+    bounding t itself would exclude it. sa is a fraction of a, so it stays inside
+    its support. st is a duration, so its prior scale is the data's: the spread of
+    the RTs above the fastest one.
+    """
+    min_rt = float(data[:, 0].min())
+    st_scale = float(np.median(data[:, 0]) - min_rt)
+    with pm.Model() as model:
+        a = pm.Uniform("a", lower=0.3, upper=5.0)
+        z = pm.Beta("z", alpha=3.0, beta=3.0)
+        v = pm.Normal("v", mu=0.0, sigma=2.0)
+        sv = pm.HalfNormal("sv", sigma=1.5)
+        sa = pm.Deterministic("sa", pm.Beta("sa_frac", alpha=1.5, beta=3.0) * a)
+        st = pm.HalfNormal("st", sigma=st_scale)
+        t = pm.Deterministic("t", pm.Uniform("t_edge", lower=0.0, upper=min_rt) + st / 2.0)
+        DDMSA("ddmsa", a, z, v, t, sv=sv, sa=sa, st=st, observed=data)
+    return model
+
+
 def fit_and_extract(cfg, n_trials=N_TRIALS):
     """Simulate data, fit model, and extract posterior summaries."""
     data = sample_ddmsa_exact(
@@ -84,7 +107,7 @@ def fit_and_extract(cfg, n_trials=N_TRIALS):
     print(f"  Simulated: {len(data)} trials, mean RT={mean_rt:.3f}s, "
           f"accuracy(upper)={accuracy:.2%}")
 
-    with make_ddmsa_model(data), warnings.catch_warnings():
+    with make_model(data), warnings.catch_warnings():
         warnings.simplefilter("ignore")
         trace = pm.sample(nuts_sampler="numpyro", draws=N_DRAWS, tune=N_TUNE,
                           chains=N_CHAINS, target_accept=TARGET_ACCEPT,
