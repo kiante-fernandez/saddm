@@ -42,6 +42,7 @@ the same likelihood at the same `n_quad` it fits, so it checks the estimator,
 not the quadrature. Per-subject ITC fits agree with the Fortran
 benchmark at r = 0.95 (value coefficient), r = 0.97 (drift intercept and delay
 coefficient), r = 0.99 (t0), r = 0.81 (a) and r = 0.89 (z). In the population
-k-sweep, a, t0, z and st track the Fortran curve within 3–6 %; sv and sa do not
-(both are weakly identified at these N and the two implementations disagree in
-direction).
+k-sweep, a and z agree with the Fortran curve within 2–8 %, t0 and st run
+5–14 % above it (except k = 1, where st is 19 % above); sv and sa do not track
+it (both are weakly identified at these N and the two implementations disagree
+in direction).
