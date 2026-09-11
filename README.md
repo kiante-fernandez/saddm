@@ -17,13 +17,7 @@ From PyPI:
 pip install saddm               # core: numpy, scipy, pytensor
 pip install "saddm[sampling]"   # + pymc, arviz, numpyro (pinned jax)
 pip install "saddm[hssm]"       # + hssm
-```
-
-From a clone, for development or to run the verification and examples:
-
-```bash
-pip install -e ".[test]"        # + pytest, numba
-pip install -e ".[hssm]"        # everything the examples need
+pip install -e ".[test]"        # + pytest, numba (from a clone, for development or to run the verification and example)
 ```
 
 ## Quickstart
@@ -34,7 +28,8 @@ from saddm import DDMSA, sample_ddmsa_exact
 
 data = sample_ddmsa_exact(a=1.1, z=0.5, v=1.5, t=0.25,
                           sv=0.8, sa=0.5, st=0.08, n_trials=2000)
-with pm.Model():                      # priors are yours; saddm ships only the likelihood
+
+with pm.Model():
     a, z, v = pm.HalfNormal("a", 3.0), pm.Beta("z", 3.0, 3.0), pm.Normal("v", 0.0, 2.0)
     t = pm.Uniform("t", 0.0, data[:, 0].min())
     DDMSA("y", a, z, v, t, sv=pm.HalfNormal("sv", 1.5), sa=pm.HalfNormal("sa", 1.0),
